@@ -1,0 +1,6 @@
+{
+  "name": "MinT Digital Innovation Hub",
+  "description": "Ethiopian Startup Designation Portal and Sovereign Innovation Ecosystem under Proclamation No. 1396/2025.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
