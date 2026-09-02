@@ -12,6 +12,10 @@ const API_BASE =
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem("dih_token");
   const isFormData = options.body instanceof FormData;
+  const controller = options.timeoutMs ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), options.timeoutMs)
+    : null;
 
   const config = {
     method: options.method || "GET",
@@ -26,7 +30,19 @@ export async function apiRequest(endpoint, options = {}) {
     config.body = isFormData ? options.body : JSON.stringify(options.body);
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, config);
+  if (controller) config.signal = controller.signal;
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, config);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("The request timed out. Please try again.");
+    }
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
 
   // Session expired or invalid
   if (res.status === 401) {

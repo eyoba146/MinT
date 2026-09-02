@@ -14,12 +14,14 @@ import {
   AlertTriangle,
   ExternalLink,
   ClipboardList,
+  HelpCircle,
 } from "lucide-react";
 
 const TABS = [
-  { key: "pending", label: "Queue" },
+  { key: "queue", label: "Queue" },
   { key: "under_review", label: "Under review" },
-  { key: "verified", label: "Designated" },
+  { key: "clarification_needed", label: "Clarification" },
+  { key: "designated", label: "Designated" },
   { key: "rejected", label: "Rejected" },
   { key: "suspended", label: "Suspended" },
   { key: "all", label: "All" },
@@ -33,7 +35,7 @@ export default function ReviewerDashboard() {
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState("pending");
+  const [tab, setTab] = useState("queue");
 
   const fetchStats = async () => {
     try {
@@ -63,7 +65,7 @@ export default function ReviewerDashboard() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchStartups("pending", "")]);
+      await Promise.all([fetchStats(), fetchStartups("queue", "")]);
       setLoading(false);
     };
     init();
@@ -77,7 +79,10 @@ export default function ReviewerDashboard() {
 
   const isOverdue = (s) => {
     if (!s.reviewDueAt) return false;
-    if (!["pending", "submitted", "under_review"].includes(s.status)) return false;
+    if (
+      !["submitted", "under_review", "clarification_needed"].includes(s.status)
+    )
+      return false;
     return new Date(s.reviewDueAt) < new Date();
   };
 
@@ -97,17 +102,34 @@ export default function ReviewerDashboard() {
       subtitle={`Staff reviewer · ${user?.fullName || ""}`}
     >
       <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-100 text-sm text-amber-900">
-        <strong>Your role:</strong> review and comment on applications. You can see all
-        startups and builders. Final designate / reject / suspend is{" "}
+        <strong>Your role:</strong> evaluate startups against Proclamation
+        1396/2025 criteria. You can start review, score, designate, request
+        clarification, or reject. Final suspend/revoke is{" "}
         <strong>Admin only</strong>.
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-4 mb-8">
-        <StatCard label="In queue" value={stats?.pending ?? 0} icon={Inbox} color="amber" />
-        <StatCard label="Overdue" value={stats?.overdue ?? 0} icon={AlertTriangle} color="red" />
+      <div className="grid sm:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          label="In queue"
+          value={stats?.submitted ?? 0}
+          icon={Inbox}
+          color="amber"
+        />
+        <StatCard
+          label="Under review"
+          value={stats?.underReview ?? 0}
+          icon={ClipboardList}
+          color="blue"
+        />
+        <StatCard
+          label="Clarification"
+          value={stats?.clarificationNeeded ?? 0}
+          icon={HelpCircle}
+          color="orange"
+        />
         <StatCard
           label="Designated"
-          value={stats?.verified ?? 0}
+          value={stats?.designated ?? 0}
           icon={Building2}
           color="teal"
         />
@@ -139,7 +161,10 @@ export default function ReviewerDashboard() {
           className="px-4 sm:px-6 py-4 border-b border-slate-100 flex gap-3"
         >
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -162,7 +187,9 @@ export default function ReviewerDashboard() {
         ) : startups.length === 0 ? (
           <div className="py-16 text-center">
             <ClipboardList className="mx-auto text-slate-300 mb-3" size={28} />
-            <p className="text-sm font-medium text-slate-700">No startups in this filter</p>
+            <p className="text-sm font-medium text-slate-700">
+              No startups in this filter
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -173,14 +200,18 @@ export default function ReviewerDashboard() {
                   <th className="px-4 py-3 font-semibold">Sector</th>
                   <th className="px-4 py-3 font-semibold">Due</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 sm:px-6 py-3 font-semibold text-right">Action</th>
+                  <th className="px-4 sm:px-6 py-3 font-semibold text-right">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {startups.map((item) => (
                   <tr key={item._id} className="hover:bg-slate-50/80">
                     <td className="px-4 sm:px-6 py-4">
-                      <div className="font-semibold text-slate-900">{item.companyName}</div>
+                      <div className="font-semibold text-slate-900">
+                        {item.companyName}
+                      </div>
                       <div className="text-xs text-slate-500">
                         {item.founder?.fullName || "—"}
                       </div>

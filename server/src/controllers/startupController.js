@@ -1,13 +1,14 @@
-const Startup = require('../models/Startup');
-const CaseDecision = require('../models/CaseDecision');
-const DesignationCertificate = require('../models/DesignationCertificate');
-const sendEmail = require('../utils/sendEmail');
+const Startup = require("../models/Startup");
+const CaseDecision = require("../models/CaseDecision");
+const DesignationCertificate = require("../models/DesignationCertificate");
+const sendEmail = require("../utils/sendEmail");
+const cloudinary = require("../config/cloudinary");
 const {
   evaluateStartupEligibility,
   addWorkingDays,
-} = require('../services/eligibilityService');
+} = require("../services/eligibilityService");
 
-const PUBLIC_STATUSES = ['verified', 'designated'];
+const PUBLIC_STATUSES = ["designated"];
 
 function addYears(date, years) {
   const d = new Date(date);
@@ -15,10 +16,90 @@ function addYears(date, years) {
   return d;
 }
 
-function makeCertificateNumber(startupId) {
+function makeDesignationId() {
   const year = new Date().getFullYear();
-  const short = String(startupId).slice(-6).toUpperCase();
-  return `MINT-DES-${year}-${short}`;
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `MINT-DES-${year}-${rand}`;
+}
+
+function makeCertificateNumber(designationId) {
+  const seq = Math.floor(1000 + Math.random() * 9000);
+  return `${designationId}-${seq}`;
+}
+
+// Upload buffer to Cloudinary
+function streamUpload(buffer, folder) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let stream;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      const error = new Error(
+        "Cloudinary file upload timed out after 20 seconds. Check the server Cloudinary settings and try again.",
+      );
+      if (stream) stream.destroy(error);
+      finish(error);
+    }, 20000);
+
+    try {
+      stream = cloudinary.uploader.upload_stream(
+        { folder, resource_type: "auto" },
+        finish,
+      );
+      stream.on("error", finish);
+      stream.end(buffer);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+// Normalize economicValueFactors from multipart (string vs array)
+function normalizeFactors(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return [value];
+}
+
+function parseBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === "")
+    return defaultValue;
+  if (typeof value === "boolean") return value;
+  return value === "true" || value === "1";
+}
+
+function normalizeStartupPayload(body = {}) {
+  const payload = { ...body };
+  // Support clients deployed before the field was renamed.
+  if (!payload.description && payload.oneLineDescription) {
+    payload.description = payload.oneLineDescription;
+  }
+  if (!payload.oneLineDescription && payload.description) {
+    payload.oneLineDescription = payload.description;
+  }
+  const booleanFields = [
+    "isPublicCompany",
+    "hasBusinessLicense",
+    "productOwnershipDeclaration",
+  ];
+  booleanFields.forEach((field) => {
+    if (field in payload) payload[field] = parseBoolean(payload[field]);
+  });
+
+  ["teamSize", "foundedYear", "founderOwnershipPercent"].forEach((field) => {
+    if (payload[field] !== undefined && payload[field] !== "") {
+      payload[field] = Number(payload[field]);
+    }
+  });
+
+  payload.economicValueFactors = normalizeFactors(payload.economicValueFactors);
+  return payload;
 }
 
 // ====================== CREATE STARTUP (Founder) ======================
@@ -28,17 +109,114 @@ exports.createStartup = async (req, res) => {
     if (existing) {
       return res.status(400).json({
         success: false,
-        message: 'You already have a startup profile',
+        message: "You already have a startup profile",
       });
     }
 
-    const strict = req.body?.strictEligibility === true;
-    const eligibility = evaluateStartupEligibility(req.body, { strict });
+    const payload = normalizeStartupPayload(req.body);
+    const strict = parseBoolean(payload.strictEligibility);
+    delete payload.strictEligibility;
+    const eligibility = evaluateStartupEligibility(payload, { strict });
 
     if (!eligibility.ok) {
       return res.status(400).json({
         success: false,
-        message: 'Eligibility checks failed',
+        message: "Eligibility checks failed",
+        errors: eligibility.errors,
+        warnings: eligibility.warnings,
+        checks: eligibility.checks,
+      });
+    }
+
+    // Handle file uploads to Cloudinary (parallel)
+    let logoUrl = null;
+    let affidavitUrl = null;
+    if (req.files) {
+      const uploads = [];
+      if (req.files.logo && req.files.logo[0]) {
+        uploads.push(
+          streamUpload(req.files.logo[0].buffer, "mints/startups/logos").then(
+            (r) => {
+              logoUrl = r.secure_url;
+            },
+          ),
+        );
+      }
+      if (req.files.affidavit && req.files.affidavit[0]) {
+        uploads.push(
+          streamUpload(
+            req.files.affidavit[0].buffer,
+            "mints/startups/affidavits",
+          ).then((r) => {
+            affidavitUrl = r.secure_url;
+          }),
+        );
+      }
+      await Promise.all(uploads);
+    }
+
+    const startup = await Startup.create({
+      ...payload,
+      logo: logoUrl,
+      affidavitUrl: affidavitUrl,
+      founder: req.user._id,
+      status: "draft",
+      submittedAt: null,
+      reviewDueAt: null,
+    });
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "create",
+      reason: "Startup profile created",
+      notes: eligibility.warnings.join("; "),
+      actor: req.user._id,
+      meta: { eligibility, strict },
+    });
+
+    res.status(201).json({
+      success: true,
+      message:
+        "Startup profile created. Save as draft or submit for designation review.",
+      data: startup,
+      eligibility,
+    });
+  } catch (error) {
+    console.error("Create startup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+};
+
+// ====================== GET MY STARTUP (Founder) ======================
+// (unchanged from previous version)
+
+// ====================== FOUNDER: SUBMIT FOR DESIGNATION ======================
+exports.submitStartup = async (req, res) => {
+  try {
+    const startup = await Startup.findOne({ founder: req.user._id });
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No startup found" });
+    }
+
+    if (!["draft", "rejected"].includes(startup.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Startup cannot be submitted in its current state",
+      });
+    }
+
+    const eligibility = evaluateStartupEligibility(startup, { strict: true });
+
+    if (!eligibility.ok) {
+      return res.status(400).json({
+        success: false,
+        message: "Eligibility checks failed. Correct before submitting.",
         errors: eligibility.errors,
         warnings: eligibility.warnings,
         checks: eligibility.checks,
@@ -48,36 +226,35 @@ exports.createStartup = async (req, res) => {
     const now = new Date();
     const reviewDueAt = addWorkingDays(now, 30);
 
-    const payload = { ...req.body };
-    delete payload.strictEligibility;
-
-    const startup = await Startup.create({
-      ...payload,
-      founder: req.user._id,
-      status: 'pending',
-      submittedAt: now,
-      reviewDueAt,
-    });
+    startup.status = "submitted";
+    startup.submittedAt = now;
+    startup.reviewDueAt = reviewDueAt;
+    startup.rejectionReason = "";
+    startup.reviewOutcome = null;
+    startup.reviewerRating = null;
+    startup.evaluationScores = {};
+    await startup.save();
 
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'submit',
-      reason: 'Startup application submitted',
-      notes: eligibility.warnings.join('; '),
+      action: "submit",
+      reason: "Startup application submitted for designation",
+      notes: eligibility.warnings.join("; "),
       actor: req.user._id,
-      meta: { eligibility, strict },
+      meta: { eligibility, reviewDueAt },
     });
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      message: 'Startup submitted successfully. Waiting for MinT designation review.',
+      message: "Startup submitted for MinT designation review.",
       data: startup,
-      eligibility,
     });
   } catch (error) {
-    console.error('Create startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Submit startup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -89,7 +266,7 @@ exports.getMyStartup = async (req, res) => {
     if (!startup) {
       return res.status(404).json({
         success: false,
-        message: 'No startup found. Please create one.',
+        message: "No startup found. Please create one.",
       });
     }
 
@@ -101,7 +278,7 @@ exports.getMyStartup = async (req, res) => {
       eligibility,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -111,21 +288,65 @@ exports.updateMyStartup = async (req, res) => {
     const startup = await Startup.findOne({ founder: req.user._id });
 
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    const payload = { ...req.body };
+    // Founders can only edit if not currently under active review
+    if (
+      ["under_review", "designated", "suspended", "revoked"].includes(
+        startup.status,
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: `Cannot edit startup while status is ${startup.status}`,
+      });
+    }
+
+    const payload = normalizeStartupPayload(req.body);
     delete payload.strictEligibility;
+    delete payload.status; // prevent status override
+    delete payload.reviewOutcome;
+    delete payload.reviewerRating;
+    delete payload.evaluationScores;
 
     Object.assign(startup, payload);
 
-    const strict = req.body?.strictEligibility === true;
+    // Keep uploaded files when editing an existing draft. The previous
+    // duplicate handler silently replaced the upload-aware implementation.
+    if (req.files) {
+      const uploads = [];
+      if (req.files.logo && req.files.logo[0]) {
+        uploads.push(
+          streamUpload(req.files.logo[0].buffer, "mints/startups/logos").then(
+            (result) => {
+              startup.logo = result.secure_url;
+            },
+          ),
+        );
+      }
+      if (req.files.affidavit && req.files.affidavit[0]) {
+        uploads.push(
+          streamUpload(
+            req.files.affidavit[0].buffer,
+            "mints/startups/affidavits",
+          ).then((result) => {
+            startup.affidavitUrl = result.secure_url;
+          }),
+        );
+      }
+      await Promise.all(uploads);
+    }
+
+    const strict = parseBoolean(req.body?.strictEligibility);
     const eligibility = evaluateStartupEligibility(startup, { strict });
 
     if (!eligibility.ok) {
       return res.status(400).json({
         success: false,
-        message: 'Eligibility checks failed',
+        message: "Eligibility checks failed",
         errors: eligibility.errors,
         warnings: eligibility.warnings,
         checks: eligibility.checks,
@@ -136,21 +357,25 @@ exports.updateMyStartup = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Startup updated successfully',
+      message: "Startup updated successfully",
       data: startup,
       eligibility,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
-// ====================== GET ALL VERIFIED/DESIGNATED STARTUPS ======================
+// ====================== GET ALL DESIGNATED STARTUPS (Public) ======================
 exports.getVerifiedStartups = async (req, res) => {
   try {
     const startups = await Startup.find({ status: { $in: PUBLIC_STATUSES } })
-      .sort({ designatedAt: -1, verifiedAt: -1 })
-      .select('-rejectionReason -suspensionReason -revocationReason -adminNotes');
+      .sort({ designatedAt: -1 })
+      .select(
+        "-rejectionReason -suspensionReason -revocationReason -reviewerNotes -clarificationRequests",
+      );
 
     res.status(200).json({
       success: true,
@@ -158,7 +383,7 @@ exports.getVerifiedStartups = async (req, res) => {
       data: startups,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -168,24 +393,27 @@ exports.getStartup = async (req, res) => {
     const startup = await Startup.findById(req.params.id);
 
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
     const isPublic = PUBLIC_STATUSES.includes(startup.status);
     const isOwner =
       req.user && startup.founder.toString() === req.user._id.toString();
-    const isAdmin = req.user && req.user.role === 'admin';
+    const isAdmin = req.user && req.user.role === "admin";
+    const isReviewer = req.user && req.user.role === "reviewer";
 
-    if (!isPublic && !isOwner && !isAdmin) {
+    if (!isPublic && !isOwner && !isAdmin && !isReviewer) {
       return res.status(403).json({
         success: false,
-        message: 'This startup is not public yet',
+        message: "This startup is not public yet",
       });
     }
 
     res.status(200).json({ success: true, data: startup });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -193,18 +421,22 @@ exports.getStartup = async (req, res) => {
 exports.getStartupCase = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email role'
+      "founder",
+      "fullName email role",
     );
 
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
     const [certificate, auditTrail] = await Promise.all([
-      DesignationCertificate.findOne({ startup: startup._id }).sort({ issuedAt: -1 }),
-      CaseDecision.find({ entityType: 'startup', entityId: startup._id })
-        .populate('actor', 'fullName email role')
+      DesignationCertificate.findOne({ startup: startup._id }).sort({
+        issuedAt: -1,
+      }),
+      CaseDecision.find({ entityType: "startup", entityId: startup._id })
+        .populate("actor", "fullName email role")
         .sort({ createdAt: -1 }),
     ]);
 
@@ -212,7 +444,9 @@ exports.getStartupCase = async (req, res) => {
     const now = new Date();
     const isOverdue =
       startup.reviewDueAt &&
-      ['pending', 'submitted', 'under_review'].includes(startup.status) &&
+      ["submitted", "under_review", "clarification_needed"].includes(
+        startup.status,
+      ) &&
       new Date(startup.reviewDueAt) < now;
 
     res.status(200).json({
@@ -229,19 +463,21 @@ exports.getStartupCase = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get startup case error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Get startup case error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
-// ====================== ADMIN / REVIEWER: PENDING QUEUE ======================
+// ====================== ADMIN / REVIEWER: REVIEW QUEUE ======================
 exports.getPendingStartups = async (req, res) => {
   try {
     const startups = await Startup.find({
-      status: { $in: ['pending', 'submitted', 'under_review'] },
+      status: { $in: ["submitted", "under_review", "clarification_needed"] },
     })
-      .populate('founder', 'fullName email')
-      .sort({ createdAt: -1 });
+      .populate("founder", "fullName email")
+      .sort({ submittedAt: 1 }); // oldest first
 
     res.status(200).json({
       success: true,
@@ -249,139 +485,440 @@ exports.getPendingStartups = async (req, res) => {
       data: startups,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// ====================== REVIEWER / ADMIN: START REVIEW ======================
+// ====================== REVIEWER: START REVIEW ======================
 exports.startReview = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id);
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    if (!['pending', 'submitted', 'under_review'].includes(startup.status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Only pending or submitted applications can be marked under review',
-      });
-    }
-
-    const notes = (req.body?.notes || '').trim();
-    if (!notes || notes.length < 10) {
+    if (!["submitted", "clarification_needed"].includes(startup.status)) {
       return res.status(400).json({
         success: false,
         message:
-          'Review notes are required (at least 10 characters). Admin will read these before final decision.',
+          "Only submitted or clarification-needed cases can enter review",
       });
     }
 
-    startup.status = 'under_review';
+    const notes = (req.body?.notes || "").trim();
+    if (!notes || notes.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Review notes are required (at least 10 characters)",
+      });
+    }
+
+    startup.status = "under_review";
+    startup.reviewStartedAt = new Date();
     startup.reviewedBy = req.user._id;
-    startup.adminNotes = notes;
+    startup.reviewerNotes = notes;
     await startup.save();
 
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'start_review',
-      reason: 'Reviewer marked case under review',
+      action: "start_review",
+      reason: "Reviewer began formal evaluation",
       notes,
       actor: req.user._id,
-      meta: {
-        reviewerRole: req.user.role,
-      },
+      meta: { reviewerRole: req.user.role },
     });
 
     res.status(200).json({
       success: true,
-      message: 'Marked under review. Notes saved for admin audit.',
+      message: "Marked under review. Evaluation in progress.",
       data: startup,
     });
   } catch (error) {
-    console.error('Start review error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Start review error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
-// ====================== ADMIN: APPROVE / DESIGNATE ======================
-exports.approveStartup = async (req, res) => {
+// ====================== REVIEWER: REQUEST CLARIFICATION ======================
+exports.requestClarification = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email'
+      "founder",
+      "fullName email",
+    );
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
+    }
+
+    if (startup.status !== "under_review") {
+      return res.status(400).json({
+        success: false,
+        message: "Clarification can only be requested while under review",
+      });
+    }
+
+    const { question } = req.body;
+    if (!question || question.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Clarification question is required (min 10 chars)",
+      });
+    }
+
+    startup.status = "clarification_needed";
+    startup.clarificationRequests.push({
+      question: question.trim(),
+      requestedAt: new Date(),
+      resolved: false,
+    });
+    await startup.save();
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "request_clarification",
+      reason: "Reviewer requested additional information",
+      notes: question.trim(),
+      actor: req.user._id,
+    });
+
+    // Notify founder
+    if (startup.founder?.email) {
+      await sendEmail({
+        to: startup.founder.email,
+        subject: `Clarification Needed – ${startup.companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #d97706;">Clarification Required</h2>
+            <p>Hello ${startup.founder.fullName || "Founder"},</p>
+            <p>
+              Your application for <strong>${startup.companyName}</strong> requires
+              additional information before we can proceed with designation review.
+            </p>
+            <p><strong>Question:</strong> ${question.trim()}</p>
+            <p>Please log in to the portal and respond.</p>
+          </div>
+        `,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Clarification requested",
+      data: startup,
+    });
+  } catch (error) {
+    console.error("Request clarification error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+};
+
+// ====================== FOUNDER: RESPOND TO CLARIFICATION ======================
+exports.respondToClarification = async (req, res) => {
+  try {
+    const startup = await Startup.findOne({ founder: req.user._id });
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
+    }
+
+    if (startup.status !== "clarification_needed") {
+      return res.status(400).json({
+        success: false,
+        message: "No pending clarification request",
+      });
+    }
+
+    const { clarificationId, response } = req.body;
+    if (!response || response.trim().length < 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Response is required",
+      });
+    }
+
+    const item = startup.clarificationRequests.id(clarificationId);
+    if (!item) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Clarification item not found" });
+    }
+    if (item.resolved) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Already resolved" });
+    }
+
+    item.response = response.trim();
+    item.respondedAt = new Date();
+    item.resolved = true;
+
+    // Return to review queue
+    startup.status = "under_review";
+    await startup.save();
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "clarification_response",
+      reason: "Founder responded to clarification",
+      notes: response.trim(),
+      actor: req.user._id,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Response submitted. Case returned to review.",
+      data: startup,
+    });
+  } catch (error) {
+    console.error("Clarification response error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+};
+
+// ====================== REVIEWER / ADMIN: SUBMIT REVIEW DECISION ======================
+// Replaces the old binary approve/reject. Now supports:
+//   outcome: 'approved' | 'needs_clarification' | 'rejected'
+//   rating: 1-5
+//   scores: { innovation, scalability, technology, marketImpact, economicValue, overall }
+exports.submitReview = async (req, res) => {
+  try {
+    const startup = await Startup.findById(req.params.id).populate(
+      "founder",
+      "fullName email",
     );
 
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    const founderEmail = startup.founder?.email;
-    const founderName = startup.founder?.fullName || 'Founder';
-    const companyName = startup.companyName;
-    const startupId = startup._id;
-    const notes = req.body?.notes || '';
+    if (startup.status !== "under_review") {
+      return res.status(400).json({
+        success: false,
+        message: "Review can only be submitted for cases under review",
+      });
+    }
+
+    const { outcome, rating, scores, notes } = req.body;
+
+    if (!["approved", "needs_clarification", "rejected"].includes(outcome)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid outcome. Must be approved, needs_clarification, or rejected",
+      });
+    }
+
+    // Validate scores
+    const requiredScores = [
+      "innovation",
+      "scalability",
+      "technology",
+      "marketImpact",
+      "economicValue",
+      "overall",
+    ];
+    if (
+      !scores ||
+      requiredScores.some(
+        (k) => typeof scores[k] !== "number" || scores[k] < 1 || scores[k] > 5,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "All evaluation scores (1-5) are required: innovation, scalability, technology, marketImpact, economicValue, overall",
+      });
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Reviewer rating (1-5) is required",
+      });
+    }
 
     const now = new Date();
-    const expiresAt = addYears(now, 2);
-    const maxUntil = addYears(now, 8);
-    const certificateNumber = makeCertificateNumber(startupId);
+    startup.reviewOutcome = outcome;
+    startup.reviewerRating = rating;
+    startup.evaluationScores = scores;
+    startup.reviewedAt = now;
+    startup.reviewedBy = req.user._id;
+    startup.reviewerNotes = (notes || "").trim();
 
-    startup.status = 'verified';
-    startup.verifiedAt = now;
+    // FIXED
+    if (outcome === "needs_clarification") {
+      startup.status = "clarification_needed";
+      startup.clarificationRequests.push({
+        question: notes?.trim() || "Additional information required",
+        requestedAt: new Date(),
+        resolved: false,
+      });
+      await startup.save();
+
+      await CaseDecision.create({
+        entityType: "startup",
+        entityId: startup._id,
+        action: "review_needs_clarification",
+        reason: "Reviewer needs more information before final decision",
+        notes: notes || "",
+        actor: req.user._id,
+        meta: { scores, rating },
+      });
+
+      if (startup.founder?.email) {
+        await sendEmail({
+          to: startup.founder.email,
+          subject: `Clarification Needed – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #d97706;">Clarification Required</h2>
+              <p>Hello ${startup.founder.fullName || "Founder"},</p>
+              <p>
+                Your application for <strong>${startup.companyName}</strong> requires
+                additional information before we can proceed with designation review.
+              </p>
+              <p><strong>Reviewer notes:</strong> ${notes || "Please log in to see details."}</p>
+              <p>Please log in to the portal and check your application status.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Review submitted: needs clarification",
+        data: startup,
+      });
+    }
+
+    if (outcome === "rejected") {
+      startup.status = "rejected";
+      startup.rejectionReason = notes || "Did not meet designation criteria";
+      await startup.save();
+
+      await CaseDecision.create({
+        entityType: "startup",
+        entityId: startup._id,
+        action: "reject",
+        reason: startup.rejectionReason,
+        notes: notes || "",
+        actor: req.user._id,
+        meta: { scores, rating },
+      });
+
+      if (startup.founder?.email) {
+        await sendEmail({
+          to: startup.founder.email,
+          subject: `Designation Update – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #64748b;">Startup Designation Update</h2>
+              <p>Hello ${startup.founder.fullName || "Founder"},</p>
+              <p>
+                After review, <strong>${startup.companyName}</strong> was <strong>not approved</strong>
+                for MinT designation at this time.
+              </p>
+              <p><strong>Reason:</strong> ${startup.rejectionReason}</p>
+              <p><strong>Overall Score:</strong> ${scores.overall}/5</p>
+              <p style="color: #666; font-size: 13px; margin-top: 30px;">
+                Digital Innovation Hub · Ministry of Innovation and Technology
+              </p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Startup rejected",
+        data: startup,
+      });
+    }
+
+    // outcome === 'approved' → DESIGNATE per Art. 12, 14
+    const designationId = makeDesignationId();
+    const certificateNumber = makeCertificateNumber(designationId);
+    const expiresAt = addYears(now, 2); // Art. 13(1): valid 2 years
+    const maxUntil = addYears(now, 8); // Art. 13(4): max 8 years total
+
+    startup.status = "designated";
     startup.designatedAt = now;
     startup.designationExpiresAt = expiresAt;
     startup.designationMaxUntil = maxUntil;
+    startup.designationId = designationId;
     startup.certificateNumber = certificateNumber;
-    startup.rejectionReason = '';
-    startup.suspensionReason = '';
-    startup.revocationReason = '';
-    startup.reviewedBy = req.user._id;
-    startup.adminNotes = notes;
+    startup.growthStageAtDesignation = startup.fundingStage || "seed";
+    startup.rejectionReason = "";
+    startup.suspensionReason = "";
+    startup.revocationReason = "";
     await startup.save();
 
     await DesignationCertificate.findOneAndUpdate(
-      { startup: startupId },
+      { startup: startup._id },
       {
-        startup: startupId,
+        startup: startup._id,
+        designationId,
         certificateNumber,
-        startupName: companyName,
-        founderNames: founderName,
-        growthStage: startup.fundingStage || '',
-        sector: startup.sector || '',
+        startupName: startup.companyName,
+        founderNames: startup.founder?.fullName || "",
+        growthStage: startup.growthStageAtDesignation,
+        sector: startup.sector || "",
         issuedAt: now,
         expiresAt,
         issuedBy: req.user._id,
-        status: 'active',
+        status: "active",
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
     await CaseDecision.create({
-      entityType: 'startup',
-      entityId: startupId,
-      action: 'approve',
-      reason: 'Startup designated/verified by MinT admin',
-      notes,
+      entityType: "startup",
+      entityId: startup._id,
+      action: "designate",
+      reason: "Startup designated by MinT reviewer/admin",
+      notes: notes || "",
       actor: req.user._id,
-      meta: { certificateNumber, designationExpiresAt: expiresAt },
+      meta: {
+        designationId,
+        certificateNumber,
+        designationExpiresAt: expiresAt,
+        scores,
+        rating,
+      },
     });
 
-    if (founderEmail) {
+    if (startup.founder?.email) {
       await sendEmail({
-        to: founderEmail,
-        subject: `MinT Designation Approved – ${companyName}`,
+        to: startup.founder.email,
+        subject: `MinT Designation Approved – ${startup.companyName}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0d9488;">Your Startup is Designated by MinT</h2>
-            <p>Hello ${founderName},</p>
+            <p>Hello ${startup.founder.fullName || "Founder"},</p>
             <p>
-              Congratulations! <strong>${companyName}</strong> has been reviewed and
+              Congratulations! <strong>${startup.companyName}</strong> has been reviewed and
               <strong>designated</strong> by the Ministry of Innovation and Technology.
             </p>
+            <p><strong>Designation ID:</strong> ${designationId}</p>
             <p><strong>Certificate No:</strong> ${certificateNumber}</p>
             <p><strong>Valid until:</strong> ${expiresAt.toDateString()}</p>
+            <p><strong>Reviewer Rating:</strong> ${rating}/5</p>
             <p style="color: #666; font-size: 13px; margin-top: 30px;">
               Digital Innovation Hub · Ministry of Innovation and Technology
             </p>
@@ -392,79 +929,14 @@ exports.approveStartup = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Startup approved and designated',
+      message: "Startup designated",
       data: startup,
     });
   } catch (error) {
-    console.error('Approve startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
-  }
-};
-
-// ====================== ADMIN: REJECT ======================
-exports.rejectStartup = async (req, res) => {
-  try {
-    const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email'
-    );
-
-    if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
-    }
-
-    const founderEmail = startup.founder?.email;
-    const founderName = startup.founder?.fullName || 'Founder';
-    const companyName = startup.companyName;
-    const reason = (req.body?.reason || '').trim() || 'Did not meet designation criteria';
-    const notes = req.body?.notes || '';
-
-    startup.status = 'rejected';
-    startup.rejectionReason = reason;
-    startup.suspensionReason = '';
-    startup.revocationReason = '';
-    startup.reviewedBy = req.user._id;
-    startup.adminNotes = notes;
-    await startup.save();
-
-    await CaseDecision.create({
-      entityType: 'startup',
-      entityId: startup._id,
-      action: 'reject',
-      reason,
-      notes,
-      actor: req.user._id,
-    });
-
-    if (founderEmail) {
-      await sendEmail({
-        to: founderEmail,
-        subject: `Designation Update – ${companyName}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #64748b;">Startup Designation Update</h2>
-            <p>Hello ${founderName},</p>
-            <p>
-              After review, <strong>${companyName}</strong> was <strong>not approved</strong>
-              for MinT designation at this time.
-            </p>
-            <p><strong>Reason:</strong> ${reason}</p>
-            <p style="color: #666; font-size: 13px; margin-top: 30px;">
-              Digital Innovation Hub · Ministry of Innovation and Technology
-            </p>
-          </div>
-        `,
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Startup rejected',
-      data: startup,
-    });
-  } catch (error) {
-    console.error('Reject startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Submit review error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -472,35 +944,37 @@ exports.rejectStartup = async (req, res) => {
 exports.suspendStartup = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email'
+      "founder",
+      "fullName email",
     );
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    const reason = (req.body?.reason || '').trim() || 'Suspended by MinT admin';
-    const notes = req.body?.notes || '';
+    const reason = (req.body?.reason || "").trim() || "Suspended by MinT admin";
+    const notes = req.body?.notes || "";
     const founderEmail = startup.founder?.email;
-    const founderName = startup.founder?.fullName || 'Founder';
+    const founderName = startup.founder?.fullName || "Founder";
     const companyName = startup.companyName;
 
-    startup.status = 'suspended';
+    startup.status = "suspended";
     startup.suspensionReason = reason;
-    startup.rejectionReason = '';
+    startup.suspendedAt = new Date();
     startup.reviewedBy = req.user._id;
-    startup.adminNotes = notes;
+    startup.reviewerNotes = notes;
     await startup.save();
 
     await DesignationCertificate.updateMany(
-      { startup: startup._id, status: 'active' },
-      { status: 'suspended' }
+      { startup: startup._id, status: "active" },
+      { status: "suspended" },
     );
 
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'suspend',
+      action: "suspend",
       reason,
       notes,
       actor: req.user._id,
@@ -519,6 +993,7 @@ exports.suspendStartup = async (req, res) => {
               <strong>suspended</strong>.
             </p>
             <p><strong>Reason:</strong> ${reason}</p>
+            <p>Please rectify within 30 working days.</p>
             <p style="color: #666; font-size: 13px; margin-top: 30px;">
               Digital Innovation Hub · Ministry of Innovation and Technology
             </p>
@@ -529,12 +1004,14 @@ exports.suspendStartup = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Startup suspended',
+      message: "Startup suspended",
       data: startup,
     });
   } catch (error) {
-    console.error('Suspend startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Suspend startup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -542,34 +1019,38 @@ exports.suspendStartup = async (req, res) => {
 exports.revokeStartup = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email'
+      "founder",
+      "fullName email",
     );
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    const reason = (req.body?.reason || '').trim() || 'Designation revoked by MinT admin';
-    const notes = req.body?.notes || '';
+    const reason =
+      (req.body?.reason || "").trim() || "Designation revoked by MinT admin";
+    const notes = req.body?.notes || "";
     const founderEmail = startup.founder?.email;
-    const founderName = startup.founder?.fullName || 'Founder';
+    const founderName = startup.founder?.fullName || "Founder";
     const companyName = startup.companyName;
 
-    startup.status = 'revoked';
+    startup.status = "revoked";
     startup.revocationReason = reason;
+    startup.revokedAt = new Date();
     startup.reviewedBy = req.user._id;
-    startup.adminNotes = notes;
+    startup.reviewerNotes = notes;
     await startup.save();
 
     await DesignationCertificate.updateMany(
       { startup: startup._id },
-      { status: 'revoked' }
+      { status: "revoked" },
     );
 
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'revoke',
+      action: "revoke",
       reason,
       notes,
       actor: req.user._id,
@@ -598,12 +1079,14 @@ exports.revokeStartup = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Startup designation revoked',
+      message: "Startup designation revoked",
       data: startup,
     });
   } catch (error) {
-    console.error('Revoke startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Revoke startup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -612,20 +1095,22 @@ exports.requestRenewal = async (req, res) => {
   try {
     const startup = await Startup.findOne({ founder: req.user._id });
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    if (!['verified', 'designated', 'renewal_due'].includes(startup.status)) {
+    if (!["designated", "expired"].includes(startup.status)) {
       return res.status(400).json({
         success: false,
-        message: 'Only designated startups can request renewal',
+        message: "Only designated or expired startups can request renewal",
       });
     }
 
     if (!startup.designationExpiresAt) {
       return res.status(400).json({
         success: false,
-        message: 'No designation expiry date found',
+        message: "No designation expiry date found",
       });
     }
 
@@ -633,113 +1118,48 @@ exports.requestRenewal = async (req, res) => {
     const expiresAt = new Date(startup.designationExpiresAt);
     const daysLeft = (expiresAt - now) / (1000 * 60 * 60 * 24);
 
-    if (daysLeft > 30 && startup.status !== 'renewal_due') {
+    // Art. 13(2): must apply 30 working days before expiry
+    if (daysLeft > 45 && startup.status !== "expired") {
       return res.status(400).json({
         success: false,
-        message: 'Renewal can be requested within 30 days of expiry',
+        message: "Renewal can be requested within 45 days of expiry",
       });
     }
 
-    if (startup.designationMaxUntil && now > new Date(startup.designationMaxUntil)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maximum designation period (8 years) has been reached',
-      });
-    }
-
-    startup.status = 'renewal_due';
-    await startup.save();
-
-    await CaseDecision.create({
-      entityType: 'startup',
-      entityId: startup._id,
-      action: 'renew',
-      reason: 'Founder requested designation renewal',
-      notes: req.body?.notes || '',
-      actor: req.user._id,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: 'Renewal request submitted',
-      data: startup,
-    });
-  } catch (error) {
-    console.error('Request renewal error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
-  }
-};
-
-// ====================== ADMIN: APPROVE RENEWAL ======================
-exports.approveRenewal = async (req, res) => {
-  try {
-    const startup = await Startup.findById(req.params.id).populate(
-      'founder',
-      'fullName email'
-    );
-    if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
-    }
-
-    if (startup.status !== 'renewal_due') {
-      return res.status(400).json({
-        success: false,
-        message: 'Startup is not in renewal_due status',
-      });
-    }
-
-    const now = new Date();
-    if (startup.designationMaxUntil && now > new Date(startup.designationMaxUntil)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maximum designation period reached',
-      });
-    }
-
-    const newExpiry = addYears(now, 2);
     if (
       startup.designationMaxUntil &&
-      newExpiry > new Date(startup.designationMaxUntil)
+      now > new Date(startup.designationMaxUntil)
     ) {
-      startup.designationExpiresAt = startup.designationMaxUntil;
-    } else {
-      startup.designationExpiresAt = newExpiry;
+      return res.status(400).json({
+        success: false,
+        message: "Maximum designation period (8 years) has been reached",
+      });
     }
 
-    startup.status = 'verified';
-    startup.designatedAt = now;
-    startup.reviewedBy = req.user._id;
-    startup.adminNotes = req.body?.notes || '';
+    startup.status = "submitted"; // resubmit for re-evaluation
+    startup.submittedAt = now;
+    startup.reviewDueAt = addWorkingDays(now, 30);
     await startup.save();
 
-    await DesignationCertificate.findOneAndUpdate(
-      { startup: startup._id },
-      {
-        expiresAt: startup.designationExpiresAt,
-        status: 'active',
-        issuedAt: now,
-        issuedBy: req.user._id,
-      }
-    );
-
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'renew',
-      reason: 'Admin approved designation renewal',
-      notes: req.body?.notes || '',
+      action: "renew",
+      reason: "Founder requested designation renewal",
+      notes: req.body?.notes || "",
       actor: req.user._id,
-      meta: { designationExpiresAt: startup.designationExpiresAt },
     });
 
     res.status(200).json({
       success: true,
-      message: 'Renewal approved',
+      message: "Renewal request submitted. Case re-entered review queue.",
       data: startup,
     });
   } catch (error) {
-    console.error('Approve renewal error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Request renewal error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -748,16 +1168,18 @@ exports.deleteStartup = async (req, res) => {
   try {
     const startup = await Startup.findById(req.params.id);
     if (!startup) {
-      return res.status(404).json({ success: false, message: 'Startup not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
     }
 
-    const reason = req.body?.reason || 'Deleted by admin';
-    const notes = req.body?.notes || '';
+    const reason = req.body?.reason || "Deleted by admin";
+    const notes = req.body?.notes || "";
 
     await CaseDecision.create({
-      entityType: 'startup',
+      entityType: "startup",
       entityId: startup._id,
-      action: 'delete',
+      action: "delete",
       reason,
       notes,
       actor: req.user._id,
@@ -768,28 +1190,33 @@ exports.deleteStartup = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Startup deleted successfully',
+      message: "Startup deleted successfully",
     });
   } catch (error) {
-    console.error('Delete startup error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Server error' });
+    console.error("Delete startup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };
 
-// ====================== ADMIN / STAFF: STATS (charts) ======================
+// ====================== ADMIN / STAFF: STATS ======================
 exports.getAdminStats = async (req, res) => {
   try {
     const now = new Date();
-    const User = require('../models/User');
-    const Opportunity = require('../models/Opportunity');
-    const EcosystemBuilder = require('../models/EcosystemBuilder');
+    const User = require("../models/User");
+    const Opportunity = require("../models/Opportunity");
+    const EcosystemBuilder = require("../models/EcosystemBuilder");
 
     const [
       total,
-      verified,
-      pending,
+      designated,
+      submitted,
+      underReview,
+      clarificationNeeded,
       rejected,
       suspended,
+      revoked,
       overdue,
       bySector,
       byStatus,
@@ -804,30 +1231,31 @@ exports.getAdminStats = async (req, res) => {
       builderByStatus,
     ] = await Promise.all([
       Startup.countDocuments(),
-      Startup.countDocuments({ status: { $in: PUBLIC_STATUSES } }),
+      Startup.countDocuments({ status: "designated" }),
+      Startup.countDocuments({ status: "submitted" }),
+      Startup.countDocuments({ status: "under_review" }),
+      Startup.countDocuments({ status: "clarification_needed" }),
+      Startup.countDocuments({ status: "rejected" }),
+      Startup.countDocuments({ status: "suspended" }),
+      Startup.countDocuments({ status: "revoked" }),
       Startup.countDocuments({
-        status: { $in: ['pending', 'submitted', 'under_review'] },
-      }),
-      Startup.countDocuments({ status: 'rejected' }),
-      Startup.countDocuments({ status: 'suspended' }),
-      Startup.countDocuments({
-        status: { $in: ['pending', 'submitted', 'under_review'] },
+        status: { $in: ["submitted", "under_review", "clarification_needed"] },
         reviewDueAt: { $lt: now },
       }),
       Startup.aggregate([
-        { $group: { _id: '$sector', count: { $sum: 1 } } },
+        { $group: { _id: "$sector", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       Startup.aggregate([
-        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       Startup.aggregate([
-        { $group: { _id: '$country', count: { $sum: 1 } } },
+        { $group: { _id: "$country", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 12 },
       ]),
-      User.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]),
+      User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       Startup.aggregate([
         {
           $match: {
@@ -839,28 +1267,28 @@ exports.getAdminStats = async (req, res) => {
         {
           $group: {
             _id: {
-              y: { $year: '$createdAt' },
-              m: { $month: '$createdAt' },
+              y: { $year: "$createdAt" },
+              m: { $month: "$createdAt" },
             },
             count: { $sum: 1 },
           },
         },
-        { $sort: { '_id.y': 1, '_id.m': 1 } },
+        { $sort: { "_id.y": 1, "_id.m": 1 } },
       ]),
       Opportunity.aggregate([
-        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
       EcosystemBuilder.countDocuments(),
-      EcosystemBuilder.countDocuments({ status: 'designated' }),
+      EcosystemBuilder.countDocuments({ status: "designated" }),
       EcosystemBuilder.countDocuments({
-        status: { $in: ['pending', 'submitted', 'under_review'] },
+        status: { $in: ["pending", "submitted", "under_review"] },
       }),
       EcosystemBuilder.aggregate([
-        { $group: { _id: '$builderType', count: { $sum: 1 } } },
+        { $group: { _id: "$builderType", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       EcosystemBuilder.aggregate([
-        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
     ]);
 
@@ -878,8 +1306,18 @@ exports.getAdminStats = async (req, res) => {
     });
 
     const monthNames = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
     const applicationsOverTime = recentMonths.map((row) => ({
       label: `${monthNames[(row._id.m || 1) - 1]} ${row._id.y}`,
@@ -890,10 +1328,13 @@ exports.getAdminStats = async (req, res) => {
       success: true,
       data: {
         totalStartups: total,
-        verified,
-        pending,
+        designated,
+        submitted,
+        underReview,
+        clarificationNeeded,
         rejected,
         suspended,
+        revoked,
         overdue,
         totalInvestors: roleMap.investor,
         totalFounders: roleMap.founder,
@@ -911,40 +1352,40 @@ exports.getAdminStats = async (req, res) => {
           roleMap.ecosystem_builder,
         charts: {
           statusChart: byStatus.map((s) => ({
-            name: (s._id || 'unknown').replace(/_/g, ' '),
+            name: (s._id || "unknown").replace(/_/g, " "),
             value: s.count,
           })),
           sectorChart: bySector.map((s) => ({
-            name: s._id || 'Other',
+            name: s._id || "Other",
             value: s.count,
           })),
           countryChart: byCountry.map((s) => ({
-            name: s._id || 'Unknown',
+            name: s._id || "Unknown",
             value: s.count,
           })),
           usersByRole: Object.entries(roleMap).map(([name, value]) => ({
-            name: name.replace(/_/g, ' '),
+            name: name.replace(/_/g, " "),
             value,
           })),
           applicationsOverTime,
           opportunityByStatus: oppCounts.map((o) => ({
-            name: o._id || 'unknown',
+            name: o._id || "unknown",
             value: o.count,
           })),
           builderByType: builderByType.map((b) => ({
-            name: (b._id || 'other').replace(/_/g, ' '),
+            name: (b._id || "other").replace(/_/g, " "),
             value: b.count,
           })),
           builderByStatus: builderByStatus.map((b) => ({
-            name: (b._id || 'unknown').replace(/_/g, ' '),
+            name: (b._id || "unknown").replace(/_/g, " "),
             value: b.count,
           })),
         },
       },
     });
   } catch (error) {
-    console.error('Stats error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Stats error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -954,17 +1395,21 @@ exports.getAdminStartups = async (req, res) => {
     const { status, search, sector } = req.query;
     const filter = {};
 
-    if (status && status !== 'all') {
-      if (status === 'pending' || status === 'queue') {
-        filter.status = { $in: ['pending', 'submitted', 'under_review'] };
-      } else if (status === 'verified' || status === 'designated') {
-        filter.status = { $in: ['verified', 'designated'] };
-      } else if (status === 'rejected') {
-        filter.status = 'rejected';
-      } else if (status === 'suspended') {
-        filter.status = 'suspended';
-      } else if (status === 'under_review') {
-        filter.status = 'under_review';
+    if (status && status !== "all") {
+      if (status === "pending" || status === "queue") {
+        filter.status = {
+          $in: ["submitted", "under_review", "clarification_needed"],
+        };
+      } else if (status === "designated") {
+        filter.status = "designated";
+      } else if (status === "rejected") {
+        filter.status = "rejected";
+      } else if (status === "suspended") {
+        filter.status = "suspended";
+      } else if (status === "under_review") {
+        filter.status = "under_review";
+      } else if (status === "clarification_needed") {
+        filter.status = "clarification_needed";
       } else {
         filter.status = status;
       }
@@ -973,15 +1418,15 @@ exports.getAdminStartups = async (req, res) => {
     if (sector) filter.sector = sector;
     if (search) {
       filter.$or = [
-        { companyName: { $regex: search, $options: 'i' } },
-        { oneLineDescription: { $regex: search, $options: 'i' } },
+        { companyName: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
       ];
     }
 
     const startups = await Startup.find(filter)
-      .populate('founder', 'fullName email')
+      .populate("founder", "fullName email")
       .sort({ createdAt: -1 })
-      .select('-adminNotes');
+      .select("-reviewerNotes");
 
     res.status(200).json({
       success: true,
@@ -989,33 +1434,33 @@ exports.getAdminStartups = async (req, res) => {
       data: startups,
     });
   } catch (error) {
-    console.error('Admin startups error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Admin startups error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 // ====================== PUBLIC STATS ======================
 exports.getPublicStats = async (req, res) => {
   try {
-    const User = require('../models/User');
+    const User = require("../models/User");
 
-    const [verified, totalInvestors, totalStartups] = await Promise.all([
-      Startup.countDocuments({ status: { $in: PUBLIC_STATUSES } }),
-      User.countDocuments({ role: 'investor' }),
+    const [designated, totalInvestors, totalStartups] = await Promise.all([
+      Startup.countDocuments({ status: "designated" }),
+      User.countDocuments({ role: "investor" }),
       Startup.countDocuments(),
     ]);
 
     res.status(200).json({
       success: true,
       data: {
-        verifiedStartups: verified,
+        designatedStartups: designated,
         totalInvestors,
         totalStartups,
         sectorsCovered: 7,
       },
     });
   } catch (error) {
-    console.error('Public stats error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Public stats error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
