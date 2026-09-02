@@ -19,6 +19,8 @@ const {
   getAdminStartups,
   deleteStartup,
   startReview,
+  expressInterest,
+  getInvestorConnections,
 } = require("../controllers/startupController");
 const { protect, restrictTo } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
@@ -31,6 +33,14 @@ router.get("/public-stats", getPublicStats);
 
 // ====================== AUTHENTICATED ======================
 router.use(protect);
+
+// ── Investor routes (specific paths BEFORE /:id catch-all) ──
+router.get(
+  "/investor/connections",
+  restrictTo("investor"),
+  getInvestorConnections,
+);
+router.post("/:id/express-interest", restrictTo("investor"), expressInterest);
 
 // Founder — profile management (with file upload support)
 router.post(

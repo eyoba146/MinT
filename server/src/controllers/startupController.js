@@ -27,6 +27,20 @@ function makeCertificateNumber(designationId) {
   return `${designationId}-${seq}`;
 }
 
+// `fundingStage` is a founder-facing display value, while the designation
+// record uses stable normalized enum values.
+function normalizeGrowthStage(fundingStage) {
+  const stages = {
+    Idea: "idea",
+    "Pre-seed": "pre_seed",
+    Seed: "seed",
+    "Series A": "early_growth",
+    Growth: "growth",
+  };
+
+  return stages[fundingStage] || "seed";
+}
+
 // Upload buffer to Cloudinary
 function streamUpload(buffer, folder) {
   return new Promise((resolve, reject) => {
@@ -863,7 +877,9 @@ exports.submitReview = async (req, res) => {
     startup.designationMaxUntil = maxUntil;
     startup.designationId = designationId;
     startup.certificateNumber = certificateNumber;
-    startup.growthStageAtDesignation = startup.fundingStage || "seed";
+    startup.growthStageAtDesignation = normalizeGrowthStage(
+      startup.fundingStage,
+    );
     startup.rejectionReason = "";
     startup.suspensionReason = "";
     startup.revocationReason = "";
@@ -1463,4 +1479,33 @@ exports.getPublicStats = async (req, res) => {
     console.error("Public stats error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
+};
+// POST /startups/:id/express-interest
+exports.expressInterest = async (req, res) => {
+  const startup = await Startup.findById(req.params.id);
+  if (!startup || !PUBLIC_STATUSES.includes(startup.status)) {
+    return res.status(400).json({ success: false, message: "Not designated" });
+  }
+  startup.investorConnections.push({
+    investor: req.user._id,
+    status: "interest_expressed",
+    investmentType: req.body.investmentType || "none_yet",
+    notes: req.body.message || "",
+  });
+  await startup.save();
+  res.json({ success: true, data: startup });
+};
+
+// GET /investor/connections
+exports.getInvestorConnections = async (req, res) => {
+  const startups = await Startup.find({
+    "investorConnections.investor": req.user._id,
+  }).select("companyName logo sector status investorConnections");
+  const connections = [];
+  startups.forEach((s) => {
+    s.investorConnections
+      .filter((c) => c.investor.toString() === req.user._id.toString())
+      .forEach((c) => connections.push({ ...c.toObject(), startup: s }));
+  });
+  res.json({ success: true, data: connections });
 };
