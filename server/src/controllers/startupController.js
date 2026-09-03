@@ -2721,7 +2721,7 @@ exports.generateConnectionDocument = async (req, res) => {
         .json({ success: false, message: "Not authorized" });
     }
 
-    // Build PDF content
+    // Build PDF content (formal layout)
     const doc = new PDFDocument({ margin: 50, size: "A4" });
     const chunks = [];
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -2731,60 +2731,147 @@ exports.generateConnectionDocument = async (req, res) => {
     });
 
     const docTitle =
-      documentType === "term_sheet" ? "Term Sheet" : "Investment Agreement";
+      documentType === "term_sheet" ? "TERM SHEET" : "INVESTMENT AGREEMENT";
 
-    doc.fontSize(18).text("MinT Digital Innovation Hub", { align: "center" });
-    doc.fontSize(14).text(docTitle, { align: "center" });
-    doc.moveDown();
+    // Letterhead
+    doc
+      .fontSize(16)
+      .font("Helvetica-Bold")
+      .text("Ministry of Innovation and Technology", { align: "center" })
+      .fontSize(10)
+      .font("Helvetica")
+      .text("Digital Innovation Hub", { align: "center" })
+      .moveDown(0.5)
+      .text("Proclamation No. 1396/2025", { align: "center" })
+      .moveDown(1);
 
-    doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`);
-    doc.moveDown();
+    // Title
+    doc
+      .fontSize(18)
+      .font("Helvetica-Bold")
+      .text(docTitle, { align: "center", underline: true })
+      .moveDown(1);
 
-    doc.fontSize(12).text("Parties", { underline: true });
-    doc.fontSize(10).text(`Startup: ${startup.companyName}`);
-    doc.text(`Founder: ${startup.founder?.fullName || "—"}`);
-    doc.text(`Investor: ${connection.investor?.fullName || "—"}`);
+    // Metadata
+    doc
+      .fontSize(9)
+      .font("Helvetica")
+      .text(`Generated: ${new Date().toLocaleString()}`)
+      .text(`Document Type: ${docTitle}`)
+      .moveDown(1);
+
+    // Horizontal line
+    doc
+      .moveTo(50, doc.y)
+      .lineTo(545, doc.y)
+      .strokeColor("#999")
+      .stroke()
+      .moveDown(1);
+
+    // Parties section
+    doc
+      .fontSize(12)
+      .font("Helvetica-Bold")
+      .text("Parties", { underline: true })
+      .moveDown(0.5)
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Startup: ${startup.companyName}`)
+      .text(`Founder: ${startup.founder?.fullName || "—"}`)
+      .text(`Investor: ${connection.investor?.fullName || "—"}`);
     if (connection.investor?.organization) {
       doc.text(`Investor Organization: ${connection.investor.organization}`);
     }
-    doc.moveDown();
+    doc.moveDown(1);
 
-    doc.fontSize(12).text("Deal Details", { underline: true });
-    doc.fontSize(10).text(`Stage: ${connection.status}`);
-    doc.text(
-      `Investment Type: ${connection.investmentType || "Not specified"}`,
-    );
-    if (connection.amount) {
-      doc.text(`Amount: ${connection.amount} ${connection.currency}`);
-    }
-    if (connection.notes) {
-      doc.text(`Notes: ${connection.notes}`);
-    }
-    doc.moveDown();
+    // Deal Details in table-like layout
+    doc
+      .fontSize(12)
+      .font("Helvetica-Bold")
+      .text("Deal Details", { underline: true })
+      .moveDown(0.5)
+      .fontSize(10)
+      .font("Helvetica");
 
+    const details = [
+      ["Stage", connection.status],
+      ["Investment Type", connection.investmentType || "Not specified"],
+      [
+        "Amount",
+        connection.amount ? `${connection.amount} ${connection.currency}` : "—",
+      ],
+      ["Notes", connection.notes || "—"],
+    ];
+
+    details.forEach(([label, value]) => {
+      doc
+        .text(`${label}:`, { continued: true, width: 120 })
+        .text(value, { indent: 10 });
+    });
+    doc.moveDown(1);
+
+    // Terms / Agreement content
     if (documentType === "term_sheet") {
-      doc.fontSize(12).text("Proposed Terms", { underline: true });
       doc
+        .fontSize(12)
+        .font("Helvetica-Bold")
+        .text("Proposed Terms", { underline: true })
+        .moveDown(0.5)
         .fontSize(10)
-        .text("1. Investment amount and valuation to be agreed upon.");
-      doc.text(
+        .font("Helvetica");
+      const terms = [
+        "1. Investment amount and valuation to be agreed upon.",
         "2. Equity stake and governance rights subject to due diligence.",
-      );
-      doc.text("3. Founder approval required before execution.");
-      doc.text(
+        "3. Founder approval required before execution.",
         "4. This term sheet is non-binding until final agreement is signed.",
-      );
+      ];
+      terms.forEach((t) => doc.text(t));
     } else {
-      doc.fontSize(12).text("Investment Agreement", { underline: true });
       doc
+        .fontSize(12)
+        .font("Helvetica-Bold")
+        .text("Investment Agreement", { underline: true })
+        .moveDown(0.5)
         .fontSize(10)
-        .text("This document confirms the agreement between the parties.");
-      doc.text("The investor agrees to provide the funds described above.");
-      doc.text(
+        .font("Helvetica");
+      const agreementLines = [
+        "This document confirms the agreement between the parties.",
+        "The investor agrees to provide the funds described above.",
         "The startup agrees to issue equity or other instruments as agreed.",
-      );
-      doc.text("Both parties confirm that all terms have been accepted.");
+        "Both parties confirm that all terms have been accepted.",
+      ];
+      agreementLines.forEach((line) => doc.text(line));
     }
+    doc.moveDown(2);
+
+    // Signature blocks
+    const signatureY = doc.y;
+    doc
+      .fontSize(10)
+      .font("Helvetica-Bold")
+      .text("Founder Signature", 50, signatureY)
+      .text("Investor Signature", 350, signatureY)
+      .moveDown(2);
+    doc
+      .moveTo(50, signatureY + 40)
+      .lineTo(200, signatureY + 40)
+      .strokeColor("#999")
+      .stroke()
+      .moveTo(350, signatureY + 40)
+      .lineTo(500, signatureY + 40)
+      .strokeColor("#999")
+      .stroke();
+
+    // Footer
+    doc
+      .fontSize(8)
+      .font("Helvetica")
+      .text(
+        "This document is generated electronically by the MinT Digital Innovation Hub and is valid without a physical signature.",
+        50,
+        doc.page.height - 50,
+        { align: "center", width: 500 },
+      );
 
     doc.end();
     const pdfBuffer = await pdfPromise;
