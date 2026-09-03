@@ -15,6 +15,8 @@ const {
   revokeStartup,
   requestRenewal,
   getAdminStats,
+  getConnectionReport,
+  exportConnectionReport,
   getPublicStats,
   getAdminStartups,
   deleteStartup,
@@ -105,6 +107,16 @@ router.get(
   "/stats",
   restrictTo("admin", "reviewer", "moderator"),
   getAdminStats,
+);
+router.get(
+  "/admin/connection-report",
+  restrictTo("admin", "reviewer", "moderator"),
+  getConnectionReport,
+);
+router.get(
+  "/admin/export/connection-report",
+  restrictTo("admin", "reviewer", "moderator"),
+  exportConnectionReport,
 );
 router.get(
   "/admin",

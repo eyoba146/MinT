@@ -1426,6 +1426,287 @@ exports.getAdminStats = async (req, res) => {
   }
 };
 
+// ====================== ADMIN: CONNECTION REPORT ======================
+exports.getConnectionReport = async (req, res) => {
+  try {
+    const now = new Date();
+
+    // All startups with investorConnections
+    const startups = await Startup.find(
+      { "investorConnections.0": { $exists: true } },
+      {
+        companyName: 1,
+        sector: 1,
+        status: 1,
+        founder: 1,
+        investorConnections: 1,
+      },
+    ).lean();
+
+    // Flatten all connections
+    const allConnections = [];
+    startups.forEach((s) => {
+      (s.investorConnections || []).forEach((c) => {
+        allConnections.push({
+          ...c,
+          startup: {
+            _id: s._id,
+            companyName: s.companyName,
+            sector: s.sector,
+            startupStatus: s.status,
+            founder: s.founder,
+          },
+        });
+      });
+    });
+
+    const total = allConnections.length;
+    const active = allConnections.filter(
+      (c) => c.status !== "closed" && c.status !== "declined",
+    ).length;
+    const closed = allConnections.filter((c) => c.status === "closed").length;
+    const declined = allConnections.filter(
+      (c) => c.status === "declined",
+    ).length;
+    const successful = closed; // closed means deal successfully executed (after gates)
+    const failed = declined;
+
+    // Breakdown by current status
+    const byStatus = Object.entries(
+      allConnections.reduce((acc, c) => {
+        const key = c.status || "unknown";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    ).map(([name, value]) => ({ name, value }));
+
+    // Breakdown by sector (based on startup sector)
+    const bySector = Object.entries(
+      allConnections.reduce((acc, c) => {
+        const sector = c.startup?.sector || "Other";
+        acc[sector] = (acc[sector] || 0) + 1;
+        return acc;
+      }, {}),
+    ).map(([name, value]) => ({ name, value }));
+
+    // Breakdown by investment type
+    const byInvestmentType = Object.entries(
+      allConnections.reduce((acc, c) => {
+        const type = c.investmentType || "none_yet";
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {}),
+    ).map(([name, value]) => ({ name, value }));
+
+    // Decline reasons summary
+    const declinedReasons =
+      declined > 0
+        ? allConnections
+            .filter((c) => c.status === "declined")
+            .reduce((acc, c) => {
+              const reason = c.declineReason || "Declined (no reason provided)";
+              acc[reason] = (acc[reason] || 0) + 1;
+              return acc;
+            }, {})
+        : {};
+
+    const avgDealSize =
+      allConnections
+        .filter((c) => c.amount && c.amount > 0)
+        .reduce((sum, c) => sum + c.amount, 0) || 0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalConnections: total,
+        activeConnections: active,
+        successfulConnections: successful,
+        declinedConnections: declined,
+        closedConnections: closed,
+        failedConnections: failed,
+        avgDealSize: avgDealSize,
+        byStatus,
+        bySector,
+        byInvestmentType,
+        declinedReasons,
+        sampleConnections: allConnections.slice(0, 20), // optional: for deep inspection
+      },
+    });
+  } catch (error) {
+    console.error("Connection report error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+// ====================== ADMIN: EXPORT CONNECTION REPORT ======================
+exports.exportConnectionReport = async (req, res) => {
+  try {
+    const { format = "csv" } = req.query; // csv, xlsx, pdf
+
+    // Fetch and aggregate data (same as getConnectionReport)
+    const startups = await Startup.find(
+      { "investorConnections.0": { $exists: true } },
+      {
+        companyName: 1,
+        sector: 1,
+        status: 1,
+        founder: 1,
+        investorConnections: 1,
+      },
+    ).lean();
+
+    const allConnections = [];
+    startups.forEach((s) => {
+      (s.investorConnections || []).forEach((c) => {
+        allConnections.push({
+          startupName: s.companyName,
+          sector: s.sector,
+          startupStatus: s.status,
+          investorId: c.investor,
+          status: c.status,
+          investmentType: c.investmentType,
+          amount: c.amount,
+          currency: c.currency,
+          notes: c.notes,
+          dataRoomApproved: c.dataRoomApproved,
+          termSheetApproved: c.termSheetApproved,
+          dealExecutionApproved: c.dealExecutionApproved,
+          declinedAt: c.declinedAt,
+          declineReason: c.declineReason,
+          connectedAt: c.connectedAt,
+          lastActivityAt: c.lastActivityAt,
+        });
+      });
+    });
+
+    if (format === "csv") {
+      const { Parser } = require("json2csv");
+      const fields = [
+        "startupName",
+        "sector",
+        "startupStatus",
+        "status",
+        "investmentType",
+        "amount",
+        "currency",
+        "dataRoomApproved",
+        "termSheetApproved",
+        "dealExecutionApproved",
+        "declinedAt",
+        "declineReason",
+        "connectedAt",
+        "lastActivityAt",
+      ];
+      const parser = new Parser({ fields });
+      const csv = parser.parse(allConnections);
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=connection-report-${Date.now()}.csv`,
+      );
+      return res.send(csv);
+    }
+
+    if (format === "xlsx") {
+      const ExcelJS = require("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Connections");
+
+      worksheet.columns = [
+        { header: "Startup", key: "startupName", width: 25 },
+        { header: "Sector", key: "sector", width: 15 },
+        { header: "Status", key: "status", width: 20 },
+        { header: "Investment Type", key: "investmentType", width: 20 },
+        { header: "Amount", key: "amount", width: 15 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Data Room", key: "dataRoomApproved", width: 12 },
+        { header: "Term Sheet", key: "termSheetApproved", width: 12 },
+        { header: "Deal Execution", key: "dealExecutionApproved", width: 15 },
+        { header: "Declined At", key: "declinedAt", width: 20 },
+        { header: "Decline Reason", key: "declineReason", width: 35 },
+        { header: "Connected At", key: "connectedAt", width: 20 },
+        { header: "Last Activity", key: "lastActivityAt", width: 20 },
+      ];
+
+      allConnections.forEach((row) => worksheet.addRow(row));
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=connection-report-${Date.now()}.xlsx`,
+      );
+
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    if (format === "pdf") {
+      const PDFDocument = require("pdfkit");
+      const doc = new PDFDocument({ margin: 30, size: "A4" });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=connection-report-${Date.now()}.pdf`,
+      );
+
+      doc.pipe(res);
+
+      doc.fontSize(18).text("MinT Digital Innovation Hub", { align: "center" });
+      doc.fontSize(14).text("Investor Connection Report", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`);
+      doc.moveDown();
+
+      doc.fontSize(12).text("Summary");
+      doc.fontSize(10).text(`Total Connections: ${allConnections.length}`);
+      const active = allConnections.filter(
+        (c) => c.status !== "closed" && c.status !== "declined",
+      ).length;
+      const closed = allConnections.filter((c) => c.status === "closed").length;
+      const declined = allConnections.filter(
+        (c) => c.status === "declined",
+      ).length;
+      doc.text(`Active: ${active}`);
+      doc.text(`Closed: ${closed}`);
+      doc.text(`Declined: ${declined}`);
+      doc.moveDown();
+
+      doc.fontSize(12).text("Connection Details");
+      doc.moveDown(0.5);
+
+      allConnections.forEach((c, i) => {
+        if (i > 0) doc.moveDown(0.5);
+        doc.fontSize(10).text(`${i + 1}. ${c.startupName} (${c.sector})`);
+        doc.fontSize(9).text(`   Status: ${c.status}`);
+        doc.text(`   Investment Type: ${c.investmentType}`);
+        if (c.amount) doc.text(`   Amount: ${c.amount} ${c.currency}`);
+        if (c.declineReason) doc.text(`   Decline Reason: ${c.declineReason}`);
+        doc.text(
+          `   Connected: ${new Date(c.connectedAt).toLocaleDateString()}`,
+        );
+        doc.text(
+          `   Last Activity: ${new Date(c.lastActivityAt).toLocaleDateString()}`,
+        );
+        doc.moveDown(0.5);
+      });
+
+      doc.end();
+      return;
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid format. Use csv, xlsx, or pdf",
+    });
+  } catch (error) {
+    console.error("Export connection report error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 // ====================== ADMIN / REVIEWER / MODERATOR: LIST ======================
 exports.getAdminStartups = async (req, res) => {
   try {
