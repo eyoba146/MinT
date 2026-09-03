@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../context/ToastContext";
 import { useDesignation } from "../../context/DesignationContext";
 import AppShell from "../../components/AppShell";
 import StartupCard from "../../components/StartupCard";
@@ -12,14 +13,13 @@ import {
   Loader2,
   Building2,
   Search,
-  Filter,
   ShieldCheck,
   Award,
-  Sparkles,
-  SlidersHorizontal,
-  Grid,
-  List,
-  RefreshCw,
+  Heart,
+  Send,
+  X,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react";
 
 const ALL_SECTORS = [
@@ -35,8 +35,18 @@ const ALL_SECTORS = [
 
 const ALL_STAGES = ["All Stages", "Idea", "Pre-seed", "Seed", "Series A"];
 
+const INVESTMENT_TYPES = [
+  { value: "none_yet", label: "Not yet determined" },
+  { value: "equity", label: "Equity" },
+  { value: "grant", label: "Grant" },
+  { value: "convertible_note", label: "Convertible Note" },
+  { value: "venture_debt", label: "Venture Debt" },
+  { value: "credit_guarantee", label: "Credit Guarantee" },
+];
+
 export default function Directory({ embedded = false }) {
   const { user, isAuthenticated } = useAuth();
+  const { toast } = useToast();
   const { applications } = useDesignation();
   const navigate = useNavigate();
   const [startups, setStartups] = useState([]);
@@ -46,12 +56,25 @@ export default function Directory({ embedded = false }) {
   const [selectedStage, setSelectedStage] = useState("All Stages");
   const [inspectCertApp, setInspectCertApp] = useState(null);
 
+  // Express Interest Modal State
+  const [interestModal, setInterestModal] = useState({
+    open: false,
+    startup: null,
+  });
+  const [interestForm, setInterestForm] = useState({
+    message: "",
+    investmentType: "none_yet",
+    amount: "",
+    currency: "ETB",
+  });
+  const [interestLoading, setInterestLoading] = useState(false);
+
   const detailBase =
     embedded && user?.role === "investor"
       ? "/investor/directory"
       : embedded && user?.role === "citizen"
-      ? "/citizen/directory"
-      : "/directory";
+        ? "/citizen/directory"
+        : "/directory";
 
   useEffect(() => {
     const load = async () => {
@@ -74,15 +97,27 @@ export default function Directory({ embedded = false }) {
   }, [applications]);
 
   const filteredStartups = startups.filter((item) => {
-    const name = (item.legalName || item.companyName || item.name || "").toLowerCase();
+    const name = (
+      item.legalName ||
+      item.companyName ||
+      item.name ||
+      ""
+    ).toLowerCase();
     const trade = (item.tradeName || "").toLowerCase();
-    const desc = (item.innovationDescription || item.oneLineDescription || item.description || "").toLowerCase();
+    const desc = (
+      item.innovationDescription ||
+      item.oneLineDescription ||
+      item.description ||
+      ""
+    ).toLowerCase();
     const q = searchQuery.toLowerCase();
-    const matchesQuery = !q || name.includes(q) || trade.includes(q) || desc.includes(q);
+    const matchesQuery =
+      !q || name.includes(q) || trade.includes(q) || desc.includes(q);
 
     const matchesSector =
       selectedSector === "All Sectors" ||
-      (item.sector && item.sector.toLowerCase() === selectedSector.toLowerCase());
+      (item.sector &&
+        item.sector.toLowerCase() === selectedSector.toLowerCase());
 
     const stage = item.fundingStage || item.stage || "Seed";
     const matchesStage =
@@ -91,6 +126,66 @@ export default function Directory({ embedded = false }) {
 
     return matchesQuery && matchesSector && matchesStage;
   });
+
+  const handleExpressInterest = (startup) => {
+    if (!isAuthenticated) {
+      toast("Sign in as an investor to express interest", "info");
+      return;
+    }
+    if (user?.role !== "investor") {
+      toast("Only investors can express interest", "info");
+      return;
+    }
+    setInterestModal({ open: true, startup });
+  };
+
+  const submitInterest = async (e) => {
+    e.preventDefault();
+    if (!interestModal.startup) return;
+
+    setInterestLoading(true);
+    try {
+      const body = {
+        message: interestForm.message,
+        investmentType: interestForm.investmentType,
+        currency: interestForm.currency,
+      };
+      if (interestForm.amount && !isNaN(Number(interestForm.amount))) {
+        body.amount = Number(interestForm.amount);
+      }
+
+      await apiRequest(
+        `/startups/${interestModal.startup._id || interestModal.startup.id}/express-interest`,
+        { method: "POST", body },
+      );
+
+      toast(
+        "Interest expressed successfully. The founder has been notified.",
+        "success",
+      );
+      setInterestModal({ open: false, startup: null });
+      setInterestForm({
+        message: "",
+        investmentType: "none_yet",
+        amount: "",
+        currency: "ETB",
+      });
+    } catch (err) {
+      toast(err.message || "Failed to express interest", "error");
+    } finally {
+      setInterestLoading(false);
+    }
+  };
+
+  const closeInterestModal = () => {
+    setInterestModal({ open: false, startup: null });
+    setInterestForm({
+      message: "",
+      investmentType: "none_yet",
+      amount: "",
+      currency: "ETB",
+    });
+  };
 
   const body = (
     <div className="space-y-8">
@@ -109,7 +204,9 @@ export default function Directory({ embedded = false }) {
               Official National Designated Startup Registry
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
-              Audited registry of Ethiopian tech enterprises officially designated under Proclamation No. 1396/2025 with statutory benefits, verified data rooms, and sovereign certificates.
+              Audited registry of Ethiopian tech enterprises officially
+              designated under Proclamation No. 1396/2025 with statutory
+              benefits, verified data rooms, and sovereign certificates.
             </p>
           </div>
         </div>
@@ -197,18 +294,25 @@ export default function Directory({ embedded = false }) {
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-          <span className="text-xs text-slate-500 font-medium">Querying sovereign startup database...</span>
+          <span className="text-xs text-slate-500 font-medium">
+            Querying sovereign startup database...
+          </span>
         </div>
       ) : filteredStartups.length === 0 ? (
         <div className="py-20 text-center bg-white rounded-3xl border border-slate-200 p-8 space-y-3">
           <div className="w-14 h-14 rounded-3xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
             <Building2 className="w-7 h-7" />
           </div>
-          <h3 className="text-base font-extrabold text-slate-900">No designated startups found</h3>
+          <h3 className="text-base font-extrabold text-slate-900">
+            No designated startups found
+          </h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Startups can apply for official MinT designation under Proclamation No. 1396/2025 to appear in this public registry.
+            Startups can apply for official MinT designation under Proclamation
+            No. 1396/2025 to appear in this public registry.
           </p>
-          {(searchQuery || selectedSector !== "All Sectors" || selectedStage !== "All Stages") && (
+          {(searchQuery ||
+            selectedSector !== "All Sectors" ||
+            selectedStage !== "All Stages") && (
             <button
               onClick={() => {
                 setSearchQuery("");
@@ -229,6 +333,9 @@ export default function Directory({ embedded = false }) {
               startup={s}
               to={`${detailBase}/${s._id || s.id}`}
               onInspectCert={() => setInspectCertApp(s)}
+              onExpressInterest={
+                user?.role === "investor" ? handleExpressInterest : undefined
+              }
             />
           ))}
         </div>
@@ -244,16 +351,136 @@ export default function Directory({ embedded = false }) {
       >
         {inspectCertApp && <CertificateView application={inspectCertApp} />}
       </Modal>
+
+      {/* Express Interest Modal */}
+      <Modal
+        isOpen={interestModal.open}
+        onClose={closeInterestModal}
+        title="Express Investment Interest"
+        subtitle={
+          interestModal.startup?.companyName ||
+          interestModal.startup?.legalName ||
+          "Startup"
+        }
+        maxWidth="max-w-lg"
+      >
+        <form onSubmit={submitInterest} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Message to Founder
+            </label>
+            <textarea
+              required
+              rows={3}
+              value={interestForm.message}
+              onChange={(e) =>
+                setInterestForm({ ...interestForm, message: e.target.value })
+              }
+              placeholder="Introduce your firm, investment thesis, and why this startup aligns with your portfolio..."
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Investment Type
+              </label>
+              <select
+                value={interestForm.investmentType}
+                onChange={(e) =>
+                  setInterestForm({
+                    ...interestForm,
+                    investmentType: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+              >
+                {INVESTMENT_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Proposed Amount
+              </label>
+              <div className="relative">
+                <DollarSign className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="number"
+                  min={0}
+                  value={interestForm.amount}
+                  onChange={(e) =>
+                    setInterestForm({ ...interestForm, amount: e.target.value })
+                  }
+                  placeholder="e.g. 500000"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Currency
+            </label>
+            <select
+              value={interestForm.currency}
+              onChange={(e) =>
+                setInterestForm({ ...interestForm, currency: e.target.value })
+              }
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+            >
+              <option value="ETB">ETB — Ethiopian Birr</option>
+              <option value="USD">USD — US Dollar</option>
+              <option value="EUR">EUR — Euro</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={interestLoading}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white text-sm font-bold rounded-xl shadow-md shadow-teal-700/20"
+            >
+              {interestLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              <span>Send Interest</span>
+            </button>
+            <button
+              type="button"
+              onClick={closeInterestModal}
+              className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 
-  if (embedded || (isAuthenticated && (user?.role === "investor" || user?.role === "citizen"))) {
+  if (
+    embedded ||
+    (isAuthenticated && (user?.role === "investor" || user?.role === "citizen"))
+  ) {
     return (
-      <AppShell title="Designated Startups" subtitle="Official Proclamation No. 1396/2025 Sovereign Registry">
+      <AppShell
+        title="Designated Startups"
+        subtitle="Official Proclamation No. 1396/2025 Sovereign Registry"
+      >
         {body}
       </AppShell>
     );
   }
 
-  return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">{body}</div>;
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">{body}</div>
+  );
 }

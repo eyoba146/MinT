@@ -5,12 +5,10 @@ import { useToast } from "../../context/ToastContext";
 import { apiRequest } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import StartupCard from "../../components/StartupCard";
-import StatusBadge from "../../components/StatusBadge";
 import {
   Search,
   Send,
   CheckCircle,
-  Clock,
   Loader2,
   Inbox,
   Briefcase,
@@ -28,6 +26,8 @@ import {
   Handshake,
   Landmark,
   Ban,
+  ArrowUpRight,
+  Edit3,
 } from "lucide-react";
 
 // Pipeline stage definitions (aligned with investorConnectionSchema enum)
@@ -37,98 +37,145 @@ const PIPELINE_STAGES = [
     label: "Interest",
     icon: Heart,
     color: "text-slate-600",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
   },
   {
     key: "data_room_accessed",
     label: "Data Room",
     icon: FileText,
     color: "text-blue-600",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
   },
   {
     key: "meeting_scheduled",
     label: "Meeting",
     icon: Calendar,
     color: "text-purple-600",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
   },
   {
     key: "due_diligence",
     label: "Due Diligence",
     icon: Scale,
     color: "text-amber-600",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
   },
   {
     key: "term_sheet",
     label: "Term Sheet",
     icon: MessageSquare,
     color: "text-indigo-600",
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
   },
   {
     key: "investment_executed",
     label: "Invested",
     icon: Handshake,
     color: "text-teal-600",
+    bg: "bg-teal-50",
+    border: "border-teal-200",
   },
   {
     key: "grant_disbursed",
     label: "Grant",
     icon: Landmark,
     color: "text-emerald-600",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
   },
   {
     key: "guarantee_issued",
     label: "Guarantee",
     icon: ShieldCheck,
     color: "text-cyan-600",
+    bg: "bg-cyan-50",
+    border: "border-cyan-200",
   },
-  { key: "closed", label: "Closed", icon: Ban, color: "text-slate-400" },
+  {
+    key: "closed",
+    label: "Closed",
+    icon: Ban,
+    color: "text-slate-400",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+  },
 ];
 
-// Map AccessRequest status to pipeline stage for v1
-function mapRequestToStage(request) {
-  if (request.status === "denied") return "closed";
-  if (request.status === "approved") return "data_room_accessed";
-  return "interest_expressed";
+const INVESTMENT_TYPES = [
+  { value: "none_yet", label: "Not Specified" },
+  { value: "equity", label: "Equity" },
+  { value: "grant", label: "Grant" },
+  { value: "convertible_note", label: "Convertible Note" },
+  { value: "venture_debt", label: "Venture Debt" },
+  { value: "credit_guarantee", label: "Credit Guarantee" },
+];
+
+function formatCurrency(amount, currency = "ETB") {
+  if (amount == null) return null;
+  return `${Number(amount).toLocaleString()} ${currency}`;
+}
+
+function connectionStatusBadge(status) {
+  const map = {
+    interest_expressed: "bg-slate-100 text-slate-700 border-slate-200",
+    data_room_accessed: "bg-blue-100 text-blue-700 border-blue-200",
+    meeting_scheduled: "bg-purple-100 text-purple-700 border-purple-200",
+    due_diligence: "bg-amber-100 text-amber-700 border-amber-200",
+    term_sheet: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    investment_executed: "bg-teal-100 text-teal-700 border-teal-200",
+    grant_disbursed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    guarantee_issued: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    closed: "bg-slate-100 text-slate-500 border-slate-200",
+  };
+  return map[status] || "bg-slate-100 text-slate-600 border-slate-200";
 }
 
 export default function InvestorDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [requests, setRequests] = useState([]);
   const [connections, setConnections] = useState([]);
   const [recommended, setRecommended] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Express interest modal
   const [expressModal, setExpressModal] = useState(null);
   const [expressLoading, setExpressLoading] = useState(false);
-  const [expressMessage, setExpressMessage] = useState("");
-  const [expressTicketSize, setExpressTicketSize] = useState("");
+  const [expressForm, setExpressForm] = useState({
+    message: "",
+    investmentType: "none_yet",
+    amount: "",
+    currency: "ETB",
+  });
+
+  // Stage advance modal
+  const [stageModal, setStageModal] = useState(null);
+  const [stageLoading, setStageLoading] = useState(false);
+  const [stageNotes, setStageNotes] = useState("");
+
+  // Edit details modal
+  const [detailModal, setDetailModal] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailForm, setDetailForm] = useState({
+    investmentType: "none_yet",
+    amount: "",
+    currency: "ETB",
+    notes: "",
+  });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [requestsRes, startupsRes] = await Promise.all([
-          apiRequest("/access-requests/my"),
+        const [connRes, startupsRes] = await Promise.all([
+          apiRequest("/startups/investor/connections"),
           apiRequest("/startups"),
         ]);
-        setRequests(requestsRes.data || []);
+        setConnections(connRes.data || []);
         setRecommended((startupsRes.data || []).slice(0, 6));
-
-        // TODO: When investorConnections backend is ready, switch to:
-        // const connRes = await apiRequest("/investor/connections");
-        // setConnections(connRes.data || []);
-        // For now, derive pipeline from access requests
-        const derived = (requestsRes.data || []).map((r) => ({
-          _id: r._id,
-          startup: r.startup,
-          stage: mapRequestToStage(r),
-          status: r.status,
-          createdAt: r.createdAt,
-          ticketSize: r.ticketSize,
-          // Placeholder fields for when investorConnections is live
-          investmentType: "none_yet",
-          amount: null,
-          lastActivityAt: r.createdAt,
-        }));
-        setConnections(derived);
       } catch (err) {
         console.error(err);
         toast(err.message || "Failed to load investor hub", "error");
@@ -149,37 +196,27 @@ export default function InvestorDashboard() {
     }
     setExpressLoading(true);
     try {
-      // v1: Reuse the existing access-request endpoint as the interest expression mechanism
-      // TODO: When /startups/:id/express-interest is live, switch to that
-      await apiRequest("/access-requests", {
+      await apiRequest(`/startups/${startupId}/express-interest`, {
         method: "POST",
         body: {
-          startupId,
           message:
-            expressMessage.trim() ||
+            expressForm.message.trim() ||
             "Interested in exploring investment opportunity",
-          investmentRange: expressTicketSize.trim() || user?.investmentRange,
+          investmentType: expressForm.investmentType,
+          amount: expressForm.amount ? Number(expressForm.amount) : null,
+          currency: expressForm.currency,
         },
       });
       toast("Interest expressed. Founder will be notified.", "success");
       setExpressModal(null);
-      setExpressMessage("");
-      setExpressTicketSize("");
-      // Refresh data
-      const requestsRes = await apiRequest("/access-requests/my");
-      setRequests(requestsRes.data || []);
-      const derived = (requestsRes.data || []).map((r) => ({
-        _id: r._id,
-        startup: r.startup,
-        stage: mapRequestToStage(r),
-        status: r.status,
-        createdAt: r.createdAt,
-        ticketSize: r.ticketSize,
+      setExpressForm({
+        message: "",
         investmentType: "none_yet",
-        amount: null,
-        lastActivityAt: r.createdAt,
-      }));
-      setConnections(derived);
+        amount: "",
+        currency: "ETB",
+      });
+      const connRes = await apiRequest("/startups/investor/connections");
+      setConnections(connRes.data || []);
     } catch (err) {
       toast(err.message || "Failed to express interest", "error");
     } finally {
@@ -187,13 +224,102 @@ export default function InvestorDashboard() {
     }
   };
 
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
-  const approvedCount = requests.filter((r) => r.status === "approved").length;
+  const handleAdvanceStage = async () => {
+    if (!stageModal) return;
+    setStageLoading(true);
+    try {
+      await apiRequest(
+        `/startups/connections/${stageModal.connection._id}/stage`,
+        {
+          method: "PATCH",
+          body: { stage: stageModal.nextStage, notes: stageNotes.trim() },
+        },
+      );
+      toast(
+        `Advanced to ${stageModal.nextStage.replace(/_/g, " ")}`,
+        "success",
+      );
+      setStageModal(null);
+      setStageNotes("");
+      const connRes = await apiRequest("/startups/investor/connections");
+      setConnections(connRes.data || []);
+    } catch (err) {
+      toast(err.message || "Failed to update stage", "error");
+    } finally {
+      setStageLoading(false);
+    }
+  };
+
+  const handleUpdateDetails = async () => {
+    if (!detailModal) return;
+    setDetailLoading(true);
+    try {
+      await apiRequest(`/startups/connections/${detailModal.connection._id}`, {
+        method: "PATCH",
+        body: {
+          investmentType: detailForm.investmentType,
+          amount: detailForm.amount ? Number(detailForm.amount) : null,
+          currency: detailForm.currency,
+          notes: detailForm.notes.trim(),
+        },
+      });
+      toast("Connection details updated", "success");
+      setDetailModal(null);
+      const connRes = await apiRequest("/startups/investor/connections");
+      setConnections(connRes.data || []);
+    } catch (err) {
+      toast(err.message || "Failed to update details", "error");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const openStageModal = (connection, nextStage) => {
+    setStageModal({ connection, nextStage });
+    setStageNotes("");
+  };
+
+  const openDetailModal = (connection) => {
+    setDetailModal({ connection });
+    setDetailForm({
+      investmentType: connection.investmentType || "none_yet",
+      amount: connection.amount || "",
+      currency: connection.currency || "ETB",
+      notes: "",
+    });
+  };
+
+  const getNextStage = (currentStage) => {
+    const idx = PIPELINE_STAGES.findIndex((s) => s.key === currentStage);
+    if (idx === -1 || idx >= PIPELINE_STAGES.length - 1) return null;
+    return PIPELINE_STAGES[idx + 1].key;
+  };
+
+  // Metrics derived from real connections
+  const totalConnections = connections.length;
+  const activeConnections = connections.filter(
+    (c) => c.status !== "closed",
+  ).length;
+  const closedConnections = connections.filter(
+    (c) => c.status === "closed",
+  ).length;
+  const dataRoomCount = connections.filter((c) =>
+    [
+      "data_room_accessed",
+      "meeting_scheduled",
+      "due_diligence",
+      "term_sheet",
+      "investment_executed",
+      "grant_disbursed",
+      "guarantee_issued",
+      "closed",
+    ].includes(c.status),
+  ).length;
 
   // Group connections by stage for the pipeline view
   const stageGroups = PIPELINE_STAGES.map((stage) => ({
     ...stage,
-    items: connections.filter((c) => c.stage === stage.key),
+    items: connections.filter((c) => c.status === stage.key),
   })).filter((g) => g.items.length > 0);
 
   if (loading) {
@@ -263,14 +389,14 @@ export default function InvestorDashboard() {
                 <Send className="w-5 h-5" />
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                Total Sent
+                Total
               </span>
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {requests.length}
+              {totalConnections}
             </div>
             <div className="text-xs text-slate-500 font-semibold mt-0.5">
-              Data Room Requests
+              Pipeline Connections
             </div>
           </div>
 
@@ -280,31 +406,31 @@ export default function InvestorDashboard() {
                 <CheckCircle className="w-5 h-5" />
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                Unlocked
+                Active
               </span>
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {approvedCount}
+              {activeConnections}
             </div>
             <div className="text-xs text-slate-500 font-semibold mt-0.5">
-              Approved Access Rooms
+              Active Engagements
             </div>
           </div>
 
           <div className="bg-gradient-to-br from-amber-500/10 via-white to-amber-50 rounded-3xl border border-amber-200 p-5 shadow-2xs">
             <div className="flex items-center justify-between mb-2">
               <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold">
-                <Clock className="w-5 h-5" />
+                <FileText className="w-5 h-5" />
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                Awaiting
+                Unlocked
               </span>
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {pendingCount}
+              {dataRoomCount}
             </div>
             <div className="text-xs text-slate-500 font-semibold mt-0.5">
-              Pending Founder Approvals
+              Data Room Access+
             </div>
           </div>
 
@@ -380,71 +506,88 @@ export default function InvestorDashboard() {
                       </span>
                     </div>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {group.items.map((conn) => (
-                        <div
-                          key={conn._id}
-                          className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-sm transition-all"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <Link
-                                to={`/investor/directory/${conn.startup?._id || conn.startup?.id}`}
-                                className="text-sm font-bold text-slate-900 hover:text-teal-800 truncate block"
-                              >
-                                {conn.startup?.companyName || "Startup"}
-                              </Link>
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {conn.startup?.sector || "—"} ·{" "}
-                                {conn.createdAt
-                                  ? new Date(
-                                      conn.createdAt,
-                                    ).toLocaleDateString()
-                                  : "—"}
+                      {group.items.map((conn) => {
+                        const nextStage = getNextStage(conn.status);
+                        return (
+                          <div
+                            key={conn._id}
+                            className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-sm transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <Link
+                                  to={`/investor/directory/${conn.startup?._id}`}
+                                  className="text-sm font-bold text-slate-900 hover:text-teal-800 truncate block"
+                                >
+                                  {conn.startup?.companyName || "Startup"}
+                                </Link>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {conn.startup?.sector || "—"} ·{" "}
+                                  {conn.lastActivityAt
+                                    ? new Date(
+                                        conn.lastActivityAt,
+                                      ).toLocaleDateString()
+                                    : "—"}
+                                </div>
                               </div>
-                            </div>
-                            <StatusBadge
-                              status={
-                                conn.status === "approved"
-                                  ? "designated"
-                                  : conn.status === "pending"
-                                    ? "submitted"
-                                    : "rejected"
-                              }
-                              size="sm"
-                            />
-                          </div>
-
-                          <div className="mt-3 flex items-center gap-2 text-[11px]">
-                            {conn.ticketSize && (
-                              <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                                {conn.ticketSize}
-                              </span>
-                            )}
-                            <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-800 font-semibold border border-teal-100">
-                              {conn.investmentType === "none_yet"
-                                ? "Type TBD"
-                                : conn.investmentType}
-                            </span>
-                          </div>
-
-                          <div className="mt-3 flex items-center gap-2">
-                            <Link
-                              to={`/investor/directory/${conn.startup?._id || conn.startup?.id}`}
-                              className="text-[11px] font-bold text-teal-800 hover:underline flex items-center gap-1"
-                            >
-                              View startup <ChevronRight className="w-3 h-3" />
-                            </Link>
-                            {conn.status === "approved" && (
-                              <Link
-                                to={`/investor/directory/${conn.startup?._id || conn.startup?.id}`}
-                                className="text-[11px] font-bold text-blue-800 hover:underline flex items-center gap-1 ml-auto"
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border capitalize shrink-0 ${connectionStatusBadge(conn.status)}`}
                               >
-                                <FileText className="w-3 h-3" /> Data room
+                                {conn.status.replace(/_/g, " ")}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                              {formatCurrency(conn.amount, conn.currency) && (
+                                <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                                  {formatCurrency(conn.amount, conn.currency)}
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-800 font-semibold border border-teal-100 capitalize">
+                                {conn.investmentType === "none_yet"
+                                  ? "Type TBD"
+                                  : conn.investmentType.replace(/_/g, " ")}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2">
+                              <Link
+                                to={`/investor/directory/${conn.startup?._id}`}
+                                className="text-[11px] font-bold text-teal-800 hover:underline flex items-center gap-1"
+                              >
+                                View startup{" "}
+                                <ChevronRight className="w-3 h-3" />
                               </Link>
-                            )}
+                              {conn.status !== "closed" && (
+                                <div className="ml-auto flex items-center gap-1">
+                                  <button
+                                    onClick={() => openDetailModal(conn)}
+                                    className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500"
+                                    title="Edit details"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  {nextStage && (
+                                    <button
+                                      onClick={() =>
+                                        openStageModal(conn, nextStage)
+                                      }
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-bold"
+                                    >
+                                      <ArrowUpRight className="w-3 h-3" />
+                                      {
+                                        PIPELINE_STAGES.find(
+                                          (s) => s.key === nextStage,
+                                        )?.label
+                                      }
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -453,82 +596,72 @@ export default function InvestorDashboard() {
           )}
         </div>
 
-        {/* Requests & Quick Profile */}
+        {/* Recent Activity & Quick Profile */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200/90 shadow-xs p-6">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
               <div>
                 <h2 className="text-base font-extrabold text-slate-900">
-                  My Data Room Requests
+                  Recent Activity
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Real-time status of requested startup confidential data rooms
+                  Latest updates across your deal pipeline
                 </p>
               </div>
-              <Link
-                to="/investor/directory"
-                className="text-xs font-bold text-teal-800 hover:underline"
-              >
-                Browse Startups →
-              </Link>
             </div>
 
             <div className="divide-y divide-slate-100">
-              {requests.length === 0 ? (
+              {connections.length === 0 ? (
                 <div className="py-12 text-center">
                   <Inbox className="mx-auto text-slate-300 mb-3" size={32} />
                   <p className="text-sm font-bold text-slate-700">
-                    No active access requests
+                    No activity yet
                   </p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                    Visit the designated startup directory and click “Request
-                    Data Room Access” on any venture profile.
+                  <p className="text-xs text-slate-400 mt-1">
+                    Your deal activity will appear here once you express
+                    interest in startups.
                   </p>
                 </div>
               ) : (
-                requests.map((req) => (
-                  <div
-                    key={req._id}
-                    className="py-4 flex items-center justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 text-sm truncate">
-                        {req.startup?.companyName ||
-                          req.startup?.legalName ||
-                          "Ethiopian Venture"}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                        <span>
-                          Requested{" "}
-                          {req.createdAt
-                            ? new Date(req.createdAt).toLocaleDateString()
-                            : "—"}
-                        </span>
-                        {req.startup?._id && (
-                          <Link
-                            to={`/investor/directory/${req.startup._id}`}
-                            className="text-teal-800 font-bold hover:underline"
-                          >
-                            {req.status === "approved"
-                              ? "Open Data Room →"
-                              : "View Startup"}
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      className={`px-3 py-1 text-xs font-bold rounded-full capitalize shrink-0 ${
-                        req.status === "approved"
-                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                          : req.status === "pending"
-                            ? "bg-amber-50 text-amber-800 border border-amber-200"
-                            : "bg-rose-50 text-rose-800 border border-rose-200"
-                      }`}
+                connections
+                  .slice(0, 8)
+                  .sort(
+                    (a, b) =>
+                      new Date(b.lastActivityAt) - new Date(a.lastActivityAt),
+                  )
+                  .map((conn) => (
+                    <div
+                      key={conn._id}
+                      className="py-4 flex items-center justify-between gap-4"
                     >
-                      {req.status}
-                    </span>
-                  </div>
-                ))
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 text-sm truncate">
+                          {conn.startup?.companyName || "Startup"}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                          <span>
+                            Stage:{" "}
+                            <strong className="text-slate-700 capitalize">
+                              {conn.status.replace(/_/g, " ")}
+                            </strong>
+                          </span>
+                          <span>·</span>
+                          <span>
+                            {conn.lastActivityAt
+                              ? new Date(
+                                  conn.lastActivityAt,
+                                ).toLocaleDateString()
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-3 py-1 text-xs font-bold rounded-full capitalize shrink-0 border ${connectionStatusBadge(conn.status)}`}
+                      >
+                        {conn.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  ))
               )}
             </div>
           </div>
@@ -634,8 +767,12 @@ export default function InvestorDashboard() {
                 type="button"
                 onClick={() => {
                   setExpressModal(null);
-                  setExpressMessage("");
-                  setExpressTicketSize("");
+                  setExpressForm({
+                    message: "",
+                    investmentType: "none_yet",
+                    amount: "",
+                    currency: "ETB",
+                  });
                 }}
                 disabled={expressLoading}
                 className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600"
@@ -650,31 +787,84 @@ export default function InvestorDashboard() {
                   Message to founder
                 </label>
                 <textarea
-                  value={expressMessage}
-                  onChange={(e) => setExpressMessage(e.target.value)}
+                  value={expressForm.message}
+                  onChange={(e) =>
+                    setExpressForm((f) => ({
+                      ...f,
+                      message: e.target.value,
+                    }))
+                  }
                   rows={3}
                   placeholder="Briefly describe your investment thesis and why this startup aligns with your mandate..."
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Investment Type
+                  </label>
+                  <select
+                    value={expressForm.investmentType}
+                    onChange={(e) =>
+                      setExpressForm((f) => ({
+                        ...f,
+                        investmentType: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                  >
+                    {INVESTMENT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Currency
+                  </label>
+                  <select
+                    value={expressForm.currency}
+                    onChange={(e) =>
+                      setExpressForm((f) => ({
+                        ...f,
+                        currency: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                  >
+                    <option value="ETB">ETB</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Proposed ticket size
+                  Proposed Amount
                 </label>
                 <input
-                  type="text"
-                  value={expressTicketSize}
-                  onChange={(e) => setExpressTicketSize(e.target.value)}
-                  placeholder="e.g., $50K – $200K"
+                  type="number"
+                  value={expressForm.amount}
+                  onChange={(e) =>
+                    setExpressForm((f) => ({
+                      ...f,
+                      amount: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 500000"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
                 />
               </div>
 
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 <strong>Note:</strong> This expresses your interest and creates
-                a data-room access request. The founder will review your profile
-                before approving access.
+                a formal connection record. The founder will be notified and can
+                review your profile.
               </div>
             </div>
 
@@ -683,8 +873,12 @@ export default function InvestorDashboard() {
                 type="button"
                 onClick={() => {
                   setExpressModal(null);
-                  setExpressMessage("");
-                  setExpressTicketSize("");
+                  setExpressForm({
+                    message: "",
+                    investmentType: "none_yet",
+                    amount: "",
+                    currency: "ETB",
+                  });
                 }}
                 disabled={expressLoading}
                 className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
@@ -706,6 +900,231 @@ export default function InvestorDashboard() {
                   <>
                     <Heart className="w-3.5 h-3.5" />
                     Express Interest
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── STAGE ADVANCE MODAL ── */}
+      {stageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Advance Deal Stage
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {stageModal.connection.startup?.companyName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStageModal(null);
+                  setStageNotes("");
+                }}
+                disabled={stageLoading}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-xs text-slate-500">Current:</span>
+                <span className="text-xs font-bold text-slate-700 capitalize">
+                  {stageModal.connection.status.replace(/_/g, " ")}
+                </span>
+                <ArrowRight className="w-3 h-3 text-slate-400" />
+                <span className="text-xs font-bold text-teal-700 capitalize">
+                  {stageModal.nextStage.replace(/_/g, " ")}
+                </span>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={stageNotes}
+                  onChange={(e) => setStageNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Add context about this stage transition..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setStageModal(null);
+                  setStageNotes("");
+                }}
+                disabled={stageLoading}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAdvanceStage}
+                disabled={stageLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-60"
+              >
+                {stageLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Updating…
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    Advance to{" "}
+                    {
+                      PIPELINE_STAGES.find(
+                        (s) => s.key === stageModal.nextStage,
+                      )?.label
+                    }
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT DETAILS MODAL ── */}
+      {detailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Connection Details
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {detailModal.connection.startup?.companyName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailModal(null)}
+                disabled={detailLoading}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Investment Type
+                  </label>
+                  <select
+                    value={detailForm.investmentType}
+                    onChange={(e) =>
+                      setDetailForm((f) => ({
+                        ...f,
+                        investmentType: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                  >
+                    {INVESTMENT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Currency
+                  </label>
+                  <select
+                    value={detailForm.currency}
+                    onChange={(e) =>
+                      setDetailForm((f) => ({
+                        ...f,
+                        currency: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                  >
+                    <option value="ETB">ETB</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Amount
+                </label>
+                <input
+                  type="number"
+                  value={detailForm.amount}
+                  onChange={(e) =>
+                    setDetailForm((f) => ({
+                      ...f,
+                      amount: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 1000000"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Notes
+                </label>
+                <textarea
+                  value={detailForm.notes}
+                  onChange={(e) =>
+                    setDetailForm((f) => ({
+                      ...f,
+                      notes: e.target.value,
+                    }))
+                  }
+                  rows={2}
+                  placeholder="Add notes about this deal..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-400"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDetailModal(null)}
+                disabled={detailLoading}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateDetails}
+                disabled={detailLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-60"
+              >
+                {detailLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Save Details
                   </>
                 )}
               </button>

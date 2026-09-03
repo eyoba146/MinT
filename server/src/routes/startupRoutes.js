@@ -21,6 +21,11 @@ const {
   startReview,
   expressInterest,
   getInvestorConnections,
+  getMyConnections,
+  updateConnectionStage,
+  updateConnectionDetails,
+  submitAnnualReport,
+  approveDataRoom,
 } = require("../controllers/startupController");
 const { protect, restrictTo } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
@@ -41,6 +46,16 @@ router.get(
   getInvestorConnections,
 );
 router.post("/:id/express-interest", restrictTo("investor"), expressInterest);
+
+// ── Connection lifecycle (BEFORE /:id catch-all) ──
+router.get("/my/connections", restrictTo("founder"), getMyConnections);
+router.patch("/connections/:connectionId/stage", updateConnectionStage);
+router.patch("/connections/:connectionId", updateConnectionDetails);
+router.patch(
+  "/connections/:connectionId/data-room",
+  restrictTo("founder"),
+  approveDataRoom,
+);
 
 // Founder — profile management (with file upload support)
 router.post(
@@ -69,6 +84,7 @@ router.post(
   restrictTo("founder"),
   respondToClarification,
 );
+router.post("/my/annual-report", restrictTo("founder"), submitAnnualReport);
 
 // Admin / Reviewer / Moderator — lists & stats
 router.get("/pending", restrictTo("admin", "reviewer"), getPendingStartups);

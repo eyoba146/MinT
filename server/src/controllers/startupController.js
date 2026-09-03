@@ -41,6 +41,21 @@ function normalizeGrowthStage(fundingStage) {
   return stages[fundingStage] || "seed";
 }
 
+// Older records may contain a Cloudinary public ID (or version/public ID)
+// instead of the secure URL returned by current uploads.
+function normalizeLogoUrl(logo) {
+  if (typeof logo !== "string" || !logo.trim()) return logo;
+  if (/^(https?:|data:)/i.test(logo)) return logo;
+  if (!process.env.CLOUDINARY_CLOUD_NAME) return logo;
+
+  const legacyVersion = logo.match(/^(\d+)\/(.+)$/);
+  const publicId = legacyVersion ? legacyVersion[2] : logo;
+  const options = { secure: true, resource_type: "image" };
+  if (legacyVersion) options.version = legacyVersion[1];
+
+  return cloudinary.url(publicId, options);
+}
+
 // Upload buffer to Cloudinary
 function streamUpload(buffer, folder) {
   return new Promise((resolve, reject) => {
@@ -391,6 +406,10 @@ exports.getVerifiedStartups = async (req, res) => {
         "-rejectionReason -suspensionReason -revocationReason -reviewerNotes -clarificationRequests",
       );
 
+    startups.forEach((startup) => {
+      startup.logo = normalizeLogoUrl(startup.logo);
+    });
+
     res.status(200).json({
       success: true,
       count: startups.length,
@@ -424,6 +443,8 @@ exports.getStartup = async (req, res) => {
         message: "This startup is not public yet",
       });
     }
+
+    startup.logo = normalizeLogoUrl(startup.logo);
 
     res.status(200).json({ success: true, data: startup });
   } catch (error) {
@@ -1481,31 +1502,577 @@ exports.getPublicStats = async (req, res) => {
   }
 };
 // POST /startups/:id/express-interest
+// ====================== INVESTOR: EXPRESS INTEREST ======================
 exports.expressInterest = async (req, res) => {
-  const startup = await Startup.findById(req.params.id);
-  if (!startup || !PUBLIC_STATUSES.includes(startup.status)) {
-    return res.status(400).json({ success: false, message: "Not designated" });
+  try {
+    const startup = await Startup.findById(req.params.id).populate(
+      "founder",
+      "fullName email",
+    );
+
+    if (!startup || !PUBLIC_STATUSES.includes(startup.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Startup not found or not designated",
+      });
+    }
+
+    // Prevent duplicate interest from same investor
+    const existing = startup.investorConnections.find(
+      (c) => c.investor.toString() === req.user._id.toString(),
+    );
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already expressed interest in this startup",
+        data: existing,
+      });
+    }
+
+    const { message, investmentType, amount, currency } = req.body;
+
+    startup.investorConnections.push({
+      investor: req.user._id,
+      status: "interest_expressed",
+      investmentType: investmentType || "none_yet",
+      amount: amount ? Number(amount) : null,
+      currency: currency || "ETB",
+      notes: message || "",
+      lastActivityAt: new Date(),
+    });
+
+    await startup.save();
+
+    // Audit trail
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "express_interest",
+      reason: "Investor expressed interest",
+      notes: message || "",
+      actor: req.user._id,
+      meta: { investmentType, amount, currency },
+    });
+
+    // Notify founder
+    if (startup.founder?.email) {
+      await sendEmail({
+        to: startup.founder.email,
+        subject: `New Investor Interest – ${startup.companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0d9488;">New Investor Interest</h2>
+            <p>Hello ${startup.founder.fullName || "Founder"},</p>
+            <p><strong>${req.user.fullName || "An investor"}</strong> has expressed interest in <strong>${startup.companyName}</strong>.</p>
+            ${message ? `<p><strong>Message:</strong> ${message}</p>` : ""}
+            <p>Log in to your dashboard to review and manage this connection.</p>
+          </div>
+        `,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Interest expressed successfully",
+      data: startup.investorConnections[startup.investorConnections.length - 1],
+    });
+  } catch (error) {
+    console.error("Express interest error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
-  startup.investorConnections.push({
-    investor: req.user._id,
-    status: "interest_expressed",
-    investmentType: req.body.investmentType || "none_yet",
-    notes: req.body.message || "",
-  });
-  await startup.save();
-  res.json({ success: true, data: startup });
 };
 
-// GET /investor/connections
+// ====================== INVESTOR: GET MY CONNECTIONS ======================
 exports.getInvestorConnections = async (req, res) => {
-  const startups = await Startup.find({
-    "investorConnections.investor": req.user._id,
-  }).select("companyName logo sector status investorConnections");
-  const connections = [];
-  startups.forEach((s) => {
-    s.investorConnections
-      .filter((c) => c.investor.toString() === req.user._id.toString())
-      .forEach((c) => connections.push({ ...c.toObject(), startup: s }));
-  });
-  res.json({ success: true, data: connections });
+  try {
+    const startups = await Startup.find({
+      "investorConnections.investor": req.user._id,
+    })
+      .populate("founder", "fullName email")
+      .select("companyName logo sector status investorConnections founder");
+
+    const connections = [];
+    startups.forEach((s) => {
+      s.investorConnections
+        .filter((c) => c.investor.toString() === req.user._id.toString())
+        .forEach((c) => {
+          connections.push({
+            ...c.toObject(),
+            startup: {
+              _id: s._id,
+              companyName: s.companyName,
+              logo: normalizeLogoUrl(s.logo),
+              sector: s.sector,
+              status: s.status,
+              founder: s.founder,
+            },
+          });
+        });
+    });
+
+    connections.sort(
+      (a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt),
+    );
+
+    res.status(200).json({
+      success: true,
+      count: connections.length,
+      data: connections,
+    });
+  } catch (error) {
+    console.error("Get investor connections error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// ====================== FOUNDER: GET INCOMING CONNECTIONS ======================
+exports.getMyConnections = async (req, res) => {
+  try {
+    const startup = await Startup.findOne({ founder: req.user._id })
+      .populate(
+        "investorConnections.investor",
+        "fullName email organization investmentRange focus",
+      )
+      .select("companyName investorConnections");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No startup found" });
+    }
+
+    const connections = (startup.investorConnections || []).sort(
+      (a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt),
+    );
+
+    res.status(200).json({
+      success: true,
+      count: connections.length,
+      data: connections,
+    });
+  } catch (error) {
+    console.error("Get my connections error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// ====================== UPDATE CONNECTION STAGE ======================
+// ====================== UPDATE CONNECTION STAGE ======================
+exports.updateConnectionStage = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { stage, notes } = req.body;
+
+    const VALID_STAGES = [
+      "interest_expressed",
+      "data_room_accessed",
+      "meeting_scheduled",
+      "due_diligence",
+      "term_sheet",
+      "investment_executed",
+      "grant_disbursed",
+      "guarantee_issued",
+      "closed",
+    ];
+
+    if (!VALID_STAGES.includes(stage)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid stage. Must be one of: ${VALID_STAGES.join(", ")}`,
+      });
+    }
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    }).populate("founder", "fullName email");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    // Auth: must be the investor who created it OR the founder of the startup
+    const isInvestor =
+      connection.investor.toString() === req.user._id.toString();
+    const isFounder =
+      startup.founder._id.toString() === req.user._id.toString();
+
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    // Prevent backward moves (except to closed)
+    const currentIdx = VALID_STAGES.indexOf(connection.status);
+    const newIdx = VALID_STAGES.indexOf(stage);
+    if (newIdx < currentIdx && stage !== "closed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot move connection to a previous stage",
+      });
+    }
+
+    // FOUNDER GATE: investor cannot advance to data_room_accessed without founder approval
+    if (stage === "data_room_accessed" && !connection.dataRoomApproved) {
+      return res.status(403).json({
+        success: false,
+        message: "Founder must approve data room access before you can proceed",
+      });
+    }
+
+    const previousStage = connection.status;
+    connection.status = stage;
+    connection.lastActivityAt = new Date();
+    if (notes) {
+      connection.notes = connection.notes
+        ? `${connection.notes}\n\n[${new Date().toLocaleDateString()}] ${notes}`
+        : notes;
+    }
+
+    await startup.save();
+
+    // Audit
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "connection_stage_update",
+      reason: `Connection moved from ${previousStage} to ${stage}`,
+      notes: notes || "",
+      actor: req.user._id,
+      meta: { connectionId, previousStage, newStage: stage },
+    });
+
+    // Notify other party
+    const notifyEmail = isInvestor ? startup.founder?.email : null;
+    if (notifyEmail) {
+      await sendEmail({
+        to: notifyEmail,
+        subject: `Deal Update – ${startup.companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0d9488;">Deal Stage Update</h2>
+            <p>The deal with <strong>${startup.companyName}</strong> has moved to <strong>${stage.replace(/_/g, " ")}</strong>.</p>
+            ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
+            <p>Updated by: ${isInvestor ? "Investor" : "Founder"}</p>
+          </div>
+        `,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Connection stage updated",
+      data: connection,
+    });
+  } catch (error) {
+    console.error("Update connection stage error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
+// ====================== FOUNDER: APPROVE / DECLINE DATA ROOM ======================
+exports.approveDataRoom = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { approved } = req.body; // true = approve, false = decline
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    }).populate("investorConnections.investor", "fullName email");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    // Must be the founder
+    if (startup.founder.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Only the founder can approve data room access",
+        });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    if (connection.status !== "interest_expressed") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Can only approve data room for interest_expressed connections",
+      });
+    }
+
+    if (approved) {
+      connection.dataRoomApproved = true;
+      connection.lastActivityAt = new Date();
+      await startup.save();
+
+      // Notify investor
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Data Room Approved – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0d9488;">Data Room Access Approved</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has approved your data room access.</p>
+              <p>You can now advance the deal to "Data Room Accessed" and review the startup's documents.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Data room access approved",
+        data: connection,
+      });
+    } else {
+      // Decline: remove the connection entirely
+      startup.investorConnections = startup.investorConnections.filter(
+        (c) => c._id.toString() !== connectionId,
+      );
+      await startup.save();
+
+      // Notify investor
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Interest Declined – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #64748b;">Interest Declined</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has declined your interest at this time.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Interest declined and connection removed",
+      });
+    }
+  } catch (error) {
+    console.error("Approve data room error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+// ====================== UPDATE CONNECTION DETAILS ======================
+exports.updateConnectionDetails = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { investmentType, amount, currency, notes } = req.body;
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    });
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const isInvestor =
+      connection.investor.toString() === req.user._id.toString();
+    const isFounder = startup.founder.toString() === req.user._id.toString();
+
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    if (investmentType) connection.investmentType = investmentType;
+    if (amount !== undefined)
+      connection.amount = amount ? Number(amount) : null;
+    if (currency) connection.currency = currency;
+    if (notes) {
+      connection.notes = connection.notes
+        ? `${connection.notes}\n\n[${new Date().toLocaleDateString()}] ${notes}`
+        : notes;
+    }
+    connection.lastActivityAt = new Date();
+
+    await startup.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Connection details updated",
+      data: connection,
+    });
+  } catch (error) {
+    console.error("Update connection details error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+// ====================== FOUNDER: SUBMIT ANNUAL REPORT ======================
+exports.submitAnnualReport = async (req, res) => {
+  try {
+    const startup = await Startup.findOne({ founder: req.user._id });
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
+    }
+
+    if (startup.status !== "designated") {
+      return res.status(400).json({
+        success: false,
+        message: "Only designated startups can submit annual reports",
+      });
+    }
+
+    const { year, reportUrl } = req.body;
+    if (!year || !reportUrl || !reportUrl.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Year and report URL are required",
+      });
+    }
+
+    const yearNum = Number(year);
+    const existing = startup.annualReports.find((r) => r.year === yearNum);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: `Annual report for FY ${yearNum} already exists`,
+      });
+    }
+
+    startup.annualReports.push({
+      year: yearNum,
+      reportUrl: reportUrl.trim(),
+      submittedAt: new Date(),
+      status: "pending",
+    });
+    startup.lastAnnualReportDate = new Date();
+    await startup.save();
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "submit_annual_report",
+      reason: `Annual report submitted for FY ${yearNum}`,
+      notes: reportUrl.trim(),
+      actor: req.user._id,
+      meta: { year: yearNum, reportUrl: reportUrl.trim() },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Annual report for FY ${yearNum} submitted`,
+      data: startup.annualReports,
+    });
+  } catch (error) {
+    console.error("Submit annual report error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+};
+// ====================== FOUNDER: SUBMIT ANNUAL REPORT ======================
+exports.submitAnnualReport = async (req, res) => {
+  try {
+    const startup = await Startup.findOne({ founder: req.user._id });
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Startup not found" });
+    }
+
+    if (startup.status !== "designated") {
+      return res.status(400).json({
+        success: false,
+        message: "Only designated startups can submit annual reports",
+      });
+    }
+
+    const { year, reportUrl } = req.body;
+    if (!year || !reportUrl || !reportUrl.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Year and report URL are required",
+      });
+    }
+
+    const yearNum = Number(year);
+    const existing = startup.annualReports.find((r) => r.year === yearNum);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: `Annual report for FY ${yearNum} already exists`,
+      });
+    }
+
+    startup.annualReports.push({
+      year: yearNum,
+      reportUrl: reportUrl.trim(),
+      submittedAt: new Date(),
+      status: "pending",
+    });
+    startup.lastAnnualReportDate = new Date();
+    await startup.save();
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "submit_annual_report",
+      reason: `Annual report submitted for FY ${yearNum}`,
+      notes: reportUrl.trim(),
+      actor: req.user._id,
+      meta: { year: yearNum, reportUrl: reportUrl.trim() },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Annual report for FY ${yearNum} submitted`,
+      data: startup.annualReports,
+    });
+  } catch (error) {
+    console.error("Submit annual report error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
 };

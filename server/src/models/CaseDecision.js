@@ -27,6 +27,8 @@ const caseDecisionSchema = new mongoose.Schema(
         'request_clarification',
         'clarification_response',
         'review_needs_clarification',
+        'express_interest',
+        'connection_stage_update',
         'delete',
       ],
       required: true,

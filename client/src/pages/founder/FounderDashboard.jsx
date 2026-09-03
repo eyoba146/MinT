@@ -21,67 +21,138 @@ import {
   HelpCircle,
   MessageSquare,
   Clock,
+  TrendingUp,
+  Handshake,
+  Landmark,
+  Heart,
+  FileCheck,
+  Upload,
+  Calendar,
+  DollarSign,
+  Building2,
+  ChevronRight,
+  ShieldCheck,
+  Lock,
+  Unlock,
 } from "lucide-react";
+
+const STAGE_META = {
+  interest_expressed: {
+    label: "Interest",
+    color: "text-slate-600",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+  },
+  data_room_accessed: {
+    label: "Data Room",
+    color: "text-blue-600",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+  },
+  meeting_scheduled: {
+    label: "Meeting",
+    color: "text-purple-600",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+  },
+  due_diligence: {
+    label: "Due Diligence",
+    color: "text-amber-600",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+  },
+  term_sheet: {
+    label: "Term Sheet",
+    color: "text-indigo-600",
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+  },
+  investment_executed: {
+    label: "Invested",
+    color: "text-teal-600",
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+  },
+  grant_disbursed: {
+    label: "Grant",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+  guarantee_issued: {
+    label: "Guarantee",
+    color: "text-cyan-600",
+    bg: "bg-cyan-50",
+    border: "border-cyan-200",
+  },
+  closed: {
+    label: "Closed",
+    color: "text-slate-400",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+  },
+};
+
+function formatCurrency(amount, currency = "ETB") {
+  if (amount == null) return "—";
+  return `${Number(amount).toLocaleString()} ${currency}`;
+}
 
 export default function FounderDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [startup, setStartup] = useState(null);
-  const [requests, setRequests] = useState([]);
+  const [connections, setConnections] = useState([]);
   const [docCount, setDocCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
   const [clarificationResponses, setClarificationResponses] = useState({});
   const [submittingClarification, setSubmittingClarification] = useState(null);
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
+  const [reportUrl, setReportUrl] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   const fetchData = async () => {
     try {
       const startupRes = await apiRequest("/startups/my");
       setStartup(startupRes.data);
-
-      try {
-        const [reqRes, docsRes] = await Promise.all([
-          apiRequest("/access-requests/incoming"),
-          apiRequest("/documents/my"),
-        ]);
-        setRequests(reqRes.data || []);
-        setDocCount(docsRes.count || docsRes.data?.length || 0);
-      } catch {
-        setRequests([]);
+      const promises = [
+        apiRequest("/documents/my").catch(() => ({ count: 0, data: [] })),
+      ];
+      if (startupRes.data && isDesignated(startupRes.data.status)) {
+        promises.push(
+          apiRequest("/startups/my/connections").catch(() => ({ data: [] })),
+        );
       }
+      const [docsRes, connRes] = await Promise.all(promises);
+      setDocCount(docsRes.count || docsRes.data?.length || 0);
+      if (connRes) setConnections(connRes.data || []);
     } catch (err) {
-      if (err.message?.toLowerCase().includes("no startup")) {
-        setStartup(null);
-      } else {
-        toast(err.message || "Failed to load dashboard", "error");
-      }
+      if (err.message?.toLowerCase().includes("no startup")) setStartup(null);
+      else toast(err.message || "Failed to load dashboard", "error");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 
-  const handleAction = async (id, action) => {
-    setActionLoading(id);
+  const handleDataRoomAction = async (connectionId, approved) => {
+    setActionLoading(connectionId);
     try {
-      await apiRequest(`/access-requests/${id}/${action}`, { method: "PATCH" });
-      setRequests((prev) =>
-        prev.map((r) =>
-          r._id === id
-            ? { ...r, status: action === "approve" ? "approved" : "denied" }
-            : r,
-        ),
-      );
+      await apiRequest(`/startups/connections/${connectionId}/data-room`, {
+        method: "PATCH",
+        body: { approved },
+      });
       toast(
-        action === "approve" ? "Access approved" : "Access denied",
+        approved ? "Data room access approved" : "Interest declined",
         "success",
       );
+      await fetchData();
     } catch (err) {
-      toast(err.message, "error");
+      toast(err.message || "Action failed", "error");
     } finally {
       setActionLoading(null);
     }
@@ -119,6 +190,29 @@ export default function FounderDashboard() {
     }
   };
 
+  const handleSubmitAnnualReport = async (e) => {
+    e.preventDefault();
+    if (!reportYear || !reportUrl.trim()) {
+      toast("Year and report URL are required", "error");
+      return;
+    }
+    setSubmittingReport(true);
+    try {
+      await apiRequest("/startups/my/annual-report", {
+        method: "POST",
+        body: { year: Number(reportYear), reportUrl: reportUrl.trim() },
+      });
+      toast("Annual report submitted successfully", "success");
+      setReportUrl("");
+      setReportYear(new Date().getFullYear());
+      await fetchData();
+    } catch (err) {
+      toast(err.message || "Failed to submit annual report", "error");
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
   if (loading) {
     return (
       <AppShell title="Founder workspace">
@@ -141,9 +235,7 @@ export default function FounderDashboard() {
             Apply for MinT designation
           </h2>
           <p className="text-sm text-slate-600 mb-6">
-            Submit your startup under Proclamation No. 1396/2025. After review,
-            you receive an official certificate and can manage a secure data
-            room for investors.
+            Submit your startup under Proclamation No. 1396/2025.
           </p>
           <Link
             to="/founder/create"
@@ -156,39 +248,40 @@ export default function FounderDashboard() {
     );
   }
 
-  const pending = requests.filter((r) => r.status === "pending");
   const unresolvedClarifications =
     startup.clarificationRequests?.filter((c) => !c.resolved) || [];
   const resolvedClarifications =
     startup.clarificationRequests?.filter((c) => c.resolved) || [];
+  const grants = startup.grantsReceived || [];
+  const annualReports = startup.annualReports || [];
 
-  // Official decision feedback (reasons only — never internal admin notes)
+  const stageGroups = Object.entries(STAGE_META)
+    .map(([key, meta]) => ({
+      key,
+      ...meta,
+      items: connections.filter((c) => c.status === key),
+    }))
+    .filter((g) => g.items.length > 0);
+
   let decisionBanner = null;
-  if (startup.status === "rejected") {
+  if (startup.status === "rejected")
     decisionBanner = {
       title: "Application not approved",
-      reason:
-        startup.rejectionReason ||
-        "Your application did not meet the designation criteria at this time. You may update and resubmit if eligibility allows.",
+      reason: startup.rejectionReason || "Did not meet criteria.",
       className: "bg-red-50 border-red-200 text-red-900",
     };
-  } else if (startup.status === "suspended") {
+  else if (startup.status === "suspended")
     decisionBanner = {
       title: "Designation suspended",
-      reason:
-        startup.suspensionReason ||
-        "Your designation has been suspended pending further review by MinT.",
+      reason: startup.suspensionReason || "Suspended pending review.",
       className: "bg-amber-50 border-amber-200 text-amber-900",
     };
-  } else if (startup.status === "revoked") {
+  else if (startup.status === "revoked")
     decisionBanner = {
       title: "Designation revoked",
-      reason:
-        startup.revocationReason ||
-        "Your designation has been revoked. Contact MinT for further guidance.",
+      reason: startup.revocationReason || "Revoked.",
       className: "bg-red-50 border-red-200 text-red-900",
     };
-  }
 
   return (
     <AppShell
@@ -204,7 +297,6 @@ export default function FounderDashboard() {
       }
     >
       <div className="space-y-6">
-        {/* Decision banners (rejected / suspended / revoked) */}
         {decisionBanner && (
           <div
             className={`p-4 rounded-2xl border flex gap-3 ${decisionBanner.className}`}
@@ -222,7 +314,6 @@ export default function FounderDashboard() {
           </div>
         )}
 
-        {/* ── CLARIFICATION NEEDED: active requests ── */}
         {startup.status === "clarification_needed" &&
           unresolvedClarifications.length > 0 && (
             <div className="bg-orange-50 rounded-2xl border border-orange-200 p-5 shadow-sm">
@@ -235,40 +326,22 @@ export default function FounderDashboard() {
                   <h3 className="font-semibold text-orange-900 text-sm">
                     Clarification required from MinT reviewer
                   </h3>
-                  <p className="text-xs text-orange-800 mt-1">
-                    Your application is on hold until you respond to the
-                    question(s) below. After submission, your case will return
-                    to the review queue.
-                  </p>
-
                   <div className="mt-4 space-y-4">
                     {unresolvedClarifications.map((req) => (
                       <div
                         key={req._id}
                         className="bg-white rounded-xl border border-orange-200 p-4"
                       >
-                        <div className="flex items-start gap-2">
-                          <MessageSquare
-                            size={14}
-                            className="shrink-0 text-orange-500 mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <div className="text-xs text-slate-500 mb-1">
-                              Asked{" "}
-                              {req.requestedAt
-                                ? new Date(req.requestedAt).toLocaleDateString()
-                                : "—"}
-                            </div>
-                            <p className="text-sm text-slate-800 font-medium">
-                              {req.question}
-                            </p>
-                          </div>
+                        <div className="text-xs text-slate-500 mb-1">
+                          Asked{" "}
+                          {req.requestedAt
+                            ? new Date(req.requestedAt).toLocaleDateString()
+                            : "—"}
                         </div>
-
+                        <p className="text-sm text-slate-800 font-medium">
+                          {req.question}
+                        </p>
                         <div className="mt-3">
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                            Your response *
-                          </label>
                           <textarea
                             value={clarificationResponses[req._id] || ""}
                             onChange={(e) =>
@@ -278,8 +351,8 @@ export default function FounderDashboard() {
                               }))
                             }
                             rows={4}
-                            placeholder="Provide a clear, detailed answer to the reviewer’s question..."
-                            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                            placeholder="Provide a clear, detailed answer..."
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                           />
                           <div className="mt-2 flex items-center justify-between">
                             <span className="text-[11px] text-slate-400">
@@ -314,7 +387,6 @@ export default function FounderDashboard() {
             </div>
           )}
 
-        {/* ── CLARIFICATION NEEDED: fallback when array is empty (backend bug safety) ── */}
         {startup.status === "clarification_needed" &&
           unresolvedClarifications.length === 0 && (
             <div className="bg-orange-50 rounded-2xl border border-orange-200 p-5 shadow-sm">
@@ -325,31 +397,18 @@ export default function FounderDashboard() {
                 />
                 <div className="flex-1">
                   <h3 className="font-semibold text-orange-900 text-sm">
-                    Clarification required from MinT reviewer
+                    Clarification required
                   </h3>
                   <p className="text-xs text-orange-800 mt-1">
-                    Your application is on hold pending additional information.
-                    The reviewer’s specific question will appear here once it is
-                    recorded.
-                  </p>
-                  {startup.reviewerNotes && (
-                    <div className="mt-3 p-3 bg-white rounded-xl border border-orange-200 text-sm text-slate-700">
-                      <span className="text-[11px] font-semibold uppercase text-slate-500 block mb-1">
-                        Reviewer notes
-                      </span>
-                      {startup.reviewerNotes}
-                    </div>
-                  )}
-                  <p className="text-xs text-orange-700 mt-3">
-                    If you believe this is an error, please contact MinT
-                    support.
+                    Your application is on hold. The reviewer&apos;s question
+                    will appear here once recorded.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-        {/* Main startup info card */}
+        {/* Startup info card */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
@@ -368,9 +427,7 @@ export default function FounderDashboard() {
                 <p className="text-xs text-teal-800 mt-2 font-medium">
                   Certificate: {startup.certificateNumber}
                   {startup.designationExpiresAt &&
-                    ` · Valid until ${new Date(
-                      startup.designationExpiresAt,
-                    ).toLocaleDateString()}`}
+                    ` · Valid until ${new Date(startup.designationExpiresAt).toLocaleDateString()}`}
                 </p>
               )}
             </div>
@@ -411,28 +468,32 @@ export default function FounderDashboard() {
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 p-4">
             <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-              <Inbox size={14} /> Pending requests
+              <TrendingUp size={14} /> Pipeline
             </div>
             <div className="font-semibold text-slate-900 text-sm">
-              {pending.length}
+              {connections.length} investor{connections.length !== 1 ? "s" : ""}
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 p-4">
             <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
-              <Eye size={14} /> Total requests
+              <Handshake size={14} /> Pending
             </div>
             <div className="font-semibold text-slate-900 text-sm">
-              {requests.length}
+              {
+                connections.filter(
+                  (c) =>
+                    c.status === "interest_expressed" && !c.dataRoomApproved,
+                ).length
+              }
             </div>
           </div>
         </div>
 
-        {/* Designated status banner */}
         {isDesignated(startup.status) && (
           <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="text-sm text-teal-900">
-              Your startup is designated. Investors can request data-room access
-              from your public profile.
+              Your startup is designated. Investors can express interest and you
+              can track deal progression through the pipeline below.
             </div>
             <button
               type="button"
@@ -444,7 +505,315 @@ export default function FounderDashboard() {
           </div>
         )}
 
-        {/* Clarification history (resolved) */}
+        {/* INVESTOR CONNECTIONS PIPELINE */}
+        {isDesignated(startup.status) && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-teal-600" /> Investor Deal
+                  Pipeline
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Review incoming interest and approve data room access
+                </p>
+              </div>
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+                {connections.length} connection
+                {connections.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {connections.length === 0 ? (
+              <div className="py-10 text-center">
+                <Handshake className="mx-auto text-slate-300 mb-3" size={32} />
+                <p className="text-sm font-bold text-slate-700">
+                  No investor connections yet
+                </p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Once investors express interest in your startup, they will
+                  appear here with their current deal stage.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {stageGroups.map((group) => (
+                  <div key={group.key}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span
+                        className={`text-xs font-bold uppercase tracking-wider ${group.color}`}
+                      >
+                        {group.label}
+                      </span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {group.items.length}
+                      </span>
+                    </div>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {group.items.map((conn) => (
+                        <div
+                          key={conn._id}
+                          className={`p-4 rounded-2xl border ${group.border} ${group.bg} hover:shadow-sm transition-all`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold text-slate-900 truncate">
+                                {conn.investor?.fullName || "Investor"}
+                              </div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {conn.investor?.organization || "—"}
+                              </div>
+                            </div>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize shrink-0 ${group.bg} ${group.color} ${group.border}`}
+                            >
+                              {conn.status.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                            {conn.amount != null && (
+                              <span className="px-2 py-0.5 rounded-lg bg-white text-slate-700 font-semibold border border-slate-200">
+                                {formatCurrency(conn.amount, conn.currency)}
+                              </span>
+                            )}
+                            <span className="px-2 py-0.5 rounded-lg bg-white text-slate-600 font-semibold border border-slate-200 capitalize">
+                              {conn.investmentType === "none_yet"
+                                ? "Type TBD"
+                                : conn.investmentType.replace(/_/g, " ")}
+                            </span>
+                          </div>
+
+                          {conn.status === "interest_expressed" && (
+                            <div className="mt-3 flex items-center gap-2">
+                              {!conn.dataRoomApproved ? (
+                                <>
+                                  <button
+                                    onClick={() =>
+                                      handleDataRoomAction(conn._id, true)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-60"
+                                  >
+                                    {actionLoading === conn._id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Unlock className="w-3 h-3" />
+                                    )}
+                                    Approve Data Room
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleDataRoomAction(conn._id, false)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-60"
+                                  >
+                                    <X className="w-3 h-3" /> Decline
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-1 rounded-lg">
+                                  <Check className="w-3 h-3" /> Data room
+                                  approved
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="mt-2 text-[11px] text-slate-400">
+                            Last activity:{" "}
+                            {conn.lastActivityAt
+                              ? new Date(
+                                  conn.lastActivityAt,
+                                ).toLocaleDateString()
+                              : "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* GRANTS */}
+        {isDesignated(startup.status) && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <Landmark className="w-4 h-4 text-emerald-600" /> Grants &
+                  Incentives
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Track grant programs and compliance per Art. 23–25
+                </p>
+              </div>
+            </div>
+            {grants.length === 0 ? (
+              <div className="py-10 text-center">
+                <Landmark className="mx-auto text-slate-300 mb-3" size={32} />
+                <p className="text-sm font-bold text-slate-700">
+                  No grants recorded yet
+                </p>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {grants.map((g) => (
+                  <div
+                    key={g._id}
+                    className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 truncate">
+                          {g.grantProgram}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {g.purpose}
+                        </div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 capitalize ${g.status === "disbursed" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : g.status === "approved" ? "bg-blue-100 text-blue-800 border-blue-200" : g.status === "report_pending" ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}
+                      >
+                        {g.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <div className="mt-3 text-sm font-black text-slate-900">
+                      {formatCurrency(g.amount, "ETB")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ANNUAL REPORTS */}
+        {isDesignated(startup.status) && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <FileCheck className="w-4 h-4 text-blue-600" /> Annual Reports
+                  & Compliance
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Submit yearly reports per Art. 12(d)
+                </p>
+              </div>
+            </div>
+            <form
+              onSubmit={handleSubmitAnnualReport}
+              className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200"
+            >
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
+                Submit new annual report
+              </h3>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Fiscal Year *
+                  </label>
+                  <input
+                    type="number"
+                    value={reportYear}
+                    onChange={(e) => setReportYear(e.target.value)}
+                    min={2020}
+                    max={2030}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Report URL *
+                  </label>
+                  <input
+                    type="url"
+                    value={reportUrl}
+                    onChange={(e) => setReportUrl(e.target.value)}
+                    placeholder="https://..."
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-end">
+                <button
+                  type="submit"
+                  disabled={submittingReport}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60"
+                >
+                  {submittingReport ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      Submit Report
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+            {annualReports.length === 0 ? (
+              <div className="py-8 text-center">
+                <FileText className="mx-auto text-slate-300 mb-3" size={28} />
+                <p className="text-sm font-bold text-slate-700">
+                  No annual reports submitted yet
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {annualReports
+                  .sort((a, b) => b.year - a.year)
+                  .map((r) => (
+                    <div
+                      key={r._id}
+                      className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} className="text-slate-400" />
+                          <span className="font-bold text-slate-900 text-sm">
+                            FY {r.year}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize ${r.status === "reviewed" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : r.status === "flagged" ? "bg-red-100 text-red-800 border-red-200" : "bg-amber-100 text-amber-800 border-amber-200"}`}
+                          >
+                            {r.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          Submitted{" "}
+                          {r.submittedAt
+                            ? new Date(r.submittedAt).toLocaleDateString()
+                            : "—"}
+                          {r.notes && ` · ${r.notes}`}
+                        </div>
+                      </div>
+                      {r.reportUrl && (
+                        <a
+                          href={r.reportUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100"
+                        >
+                          <Eye size={12} /> View
+                        </a>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {resolvedClarifications.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             <h3 className="font-semibold text-slate-900 text-sm mb-3 flex items-center gap-2">
@@ -474,89 +843,9 @@ export default function FounderDashboard() {
           </div>
         )}
 
-        {/* Data-room requests + Quick links */}
+        {/* Quick links only — removed obsolete legacy access requests section */}
         <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-semibold text-slate-900 text-sm">
-                  Incoming data-room requests
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Approve or deny investor access to your documents
-                </p>
-              </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                {pending.length} pending
-              </span>
-            </div>
-
-            {requests.length === 0 ? (
-              <div className="py-12 text-center">
-                <Inbox className="mx-auto text-slate-300 mb-3" size={28} />
-                <p className="text-sm font-medium text-slate-700">
-                  No access requests yet
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  When investors request access, they will appear here.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {requests.map((req) => (
-                  <div
-                    key={req._id}
-                    className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div>
-                      <div className="font-semibold text-slate-900 text-sm">
-                        {req.investor?.fullName || "Investor"}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        {req.investor?.organization || "—"}
-                        {req.createdAt &&
-                          ` · ${new Date(req.createdAt).toLocaleDateString()}`}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {req.status === "pending" ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleAction(req._id, "approve")}
-                            disabled={actionLoading === req._id}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 rounded-lg disabled:opacity-60"
-                          >
-                            <Check size={14} /> Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAction(req._id, "deny")}
-                            disabled={actionLoading === req._id}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg disabled:opacity-60"
-                          >
-                            <X size={14} /> Deny
-                          </button>
-                        </>
-                      ) : (
-                        <span
-                          className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${
-                            req.status === "approved"
-                              ? "bg-emerald-50 text-emerald-800"
-                              : "bg-red-50 text-red-800"
-                          }`}
-                        >
-                          {req.status}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
+          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2">
             <h3 className="text-sm font-semibold text-slate-900 mb-3">
               Quick links
             </h3>

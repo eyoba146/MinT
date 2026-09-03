@@ -37,26 +37,26 @@ export default function Modal({
 
       <div className="min-h-full flex items-center justify-center p-4 text-center sm:p-6">
         <div
-          className={`w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-left align-middle shadow-2xl transition-all relative z-10`}
+          className={`w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white border border-slate-200 text-left align-middle shadow-2xl transition-all relative z-10`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-start justify-between p-6 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-start justify-between p-6 border-b border-slate-100">
             <div className="pr-6">
               {title && (
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-6">
+                <h3 className="text-lg font-bold text-slate-900 leading-6">
                   {title}
                 </h3>
               )}
               {subtitle && (
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   {subtitle}
                 </p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition-colors"
+              className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>

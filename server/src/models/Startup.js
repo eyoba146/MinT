@@ -46,6 +46,10 @@ const investorConnectionSchema = new mongoose.Schema(
       ],
       default: "interest_expressed",
     },
+    dataRoomApproved: {
+      type: Boolean,
+      default: false,
+    },
     investmentType: {
       type: String,
       enum: [
@@ -126,7 +130,6 @@ const startupSchema = new mongoose.Schema(
       required: [true, "Description is required"],
       maxlength: 500,
     },
-    // Kept for compatibility with older clients and existing records.
     oneLineDescription: {
       type: String,
       maxlength: 500,
