@@ -9,6 +9,7 @@ import {
   Search,
   Send,
   CheckCircle,
+  Clock,
   Loader2,
   Inbox,
   Briefcase,
@@ -50,7 +51,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "meeting_scheduled",
-    label: "Meeting",
+    label: "Meeting Set",
     icon: Calendar,
     color: "text-purple-600",
     bg: "bg-purple-50",
@@ -58,7 +59,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "due_diligence",
-    label: "Due Diligence",
+    label: "Startup Review",
     icon: Scale,
     color: "text-amber-600",
     bg: "bg-amber-50",
@@ -66,7 +67,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "term_sheet",
-    label: "Term Sheet",
+    label: "Deal Proposal",
     icon: MessageSquare,
     color: "text-indigo-600",
     bg: "bg-indigo-50",
@@ -74,7 +75,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "investment_executed",
-    label: "Invested",
+    label: "Investment Done",
     icon: Handshake,
     color: "text-teal-600",
     bg: "bg-teal-50",
@@ -82,7 +83,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "grant_disbursed",
-    label: "Grant",
+    label: "Grant Received",
     icon: Landmark,
     color: "text-emerald-600",
     bg: "bg-emerald-50",
@@ -90,7 +91,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "guarantee_issued",
-    label: "Guarantee",
+    label: "Guarantee Issued",
     icon: ShieldCheck,
     color: "text-cyan-600",
     bg: "bg-cyan-50",
@@ -98,7 +99,7 @@ const PIPELINE_STAGES = [
   },
   {
     key: "closed",
-    label: "Closed",
+    label: "Deal Closed",
     icon: Ban,
     color: "text-slate-400",
     bg: "bg-slate-50",
@@ -106,18 +107,14 @@ const PIPELINE_STAGES = [
   },
 ];
 
-const INVESTMENT_TYPES = [
-  { value: "none_yet", label: "Not Specified" },
-  { value: "equity", label: "Equity" },
-  { value: "grant", label: "Grant" },
-  { value: "convertible_note", label: "Convertible Note" },
-  { value: "venture_debt", label: "Venture Debt" },
-  { value: "credit_guarantee", label: "Credit Guarantee" },
-];
-
 function formatCurrency(amount, currency = "ETB") {
   if (amount == null) return null;
   return `${Number(amount).toLocaleString()} ${currency}`;
+}
+
+function getStageLabel(status) {
+  const stage = PIPELINE_STAGES.find((s) => s.key === status);
+  return stage?.label || status.replace(/_/g, " ");
 }
 
 function connectionStatusBadge(status) {
@@ -235,10 +232,7 @@ export default function InvestorDashboard() {
           body: { stage: stageModal.nextStage, notes: stageNotes.trim() },
         },
       );
-      toast(
-        `Advanced to ${stageModal.nextStage.replace(/_/g, " ")}`,
-        "success",
-      );
+      toast(`Advanced to ${getStageLabel(stageModal.nextStage)}`, "success");
       setStageModal(null);
       setStageNotes("");
       const connRes = await apiRequest("/startups/investor/connections");
@@ -533,7 +527,7 @@ export default function InvestorDashboard() {
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold border capitalize shrink-0 ${connectionStatusBadge(conn.status)}`}
                               >
-                                {conn.status.replace(/_/g, " ")}
+                                {getStageLabel(conn.status)}
                               </span>
                             </div>
 
@@ -549,6 +543,26 @@ export default function InvestorDashboard() {
                                   : conn.investmentType.replace(/_/g, " ")}
                               </span>
                             </div>
+                            {conn.status === "term_sheet" &&
+                              !conn.termSheetApproved && (
+                                <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  Awaiting founder approval of term sheet
+                                </div>
+                              )}
+
+                            {[
+                              "investment_executed",
+                              "grant_disbursed",
+                              "guarantee_issued",
+                            ].includes(conn.status) &&
+                              !conn.dealExecutionApproved && (
+                                <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  Awaiting founder confirmation of deal
+                                  execution
+                                </div>
+                              )}
 
                             <div className="mt-3 flex items-center gap-2">
                               <Link
@@ -567,21 +581,38 @@ export default function InvestorDashboard() {
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
                                   </button>
-                                  {nextStage && (
-                                    <button
-                                      onClick={() =>
-                                        openStageModal(conn, nextStage)
-                                      }
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-bold"
-                                    >
-                                      <ArrowUpRight className="w-3 h-3" />
-                                      {
-                                        PIPELINE_STAGES.find(
-                                          (s) => s.key === nextStage,
-                                        )?.label
-                                      }
-                                    </button>
-                                  )}
+                                  {nextStage &&
+                                    (() => {
+                                      const blocked =
+                                        (conn.status === "term_sheet" &&
+                                          !conn.termSheetApproved) ||
+                                        ([
+                                          "investment_executed",
+                                          "grant_disbursed",
+                                          "guarantee_issued",
+                                        ].includes(conn.status) &&
+                                          !conn.dealExecutionApproved);
+                                      return (
+                                        <button
+                                          onClick={() =>
+                                            openStageModal(conn, nextStage)
+                                          }
+                                          disabled={blocked}
+                                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold ${
+                                            blocked
+                                              ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                                              : "bg-teal-600 hover:bg-teal-700 text-white"
+                                          }`}
+                                        >
+                                          <ArrowUpRight className="w-3 h-3" />
+                                          {
+                                            PIPELINE_STAGES.find(
+                                              (s) => s.key === nextStage,
+                                            )?.label
+                                          }
+                                        </button>
+                                      );
+                                    })()}
                                 </div>
                               )}
                             </div>
@@ -642,7 +673,7 @@ export default function InvestorDashboard() {
                           <span>
                             Stage:{" "}
                             <strong className="text-slate-700 capitalize">
-                              {conn.status.replace(/_/g, " ")}
+                              {getStageLabel(conn.status)}
                             </strong>
                           </span>
                           <span>·</span>
@@ -658,7 +689,7 @@ export default function InvestorDashboard() {
                       <span
                         className={`px-3 py-1 text-xs font-bold rounded-full capitalize shrink-0 border ${connectionStatusBadge(conn.status)}`}
                       >
-                        {conn.status.replace(/_/g, " ")}
+                        {getStageLabel(conn.status)}
                       </span>
                     </div>
                   ))
@@ -938,11 +969,11 @@ export default function InvestorDashboard() {
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-xs text-slate-500">Current:</span>
                 <span className="text-xs font-bold text-slate-700 capitalize">
-                  {stageModal.connection.status.replace(/_/g, " ")}
+                  {getStageLabel(stageModal.connection.status)}
                 </span>
                 <ArrowRight className="w-3 h-3 text-slate-400" />
                 <span className="text-xs font-bold text-teal-700 capitalize">
-                  {stageModal.nextStage.replace(/_/g, " ")}
+                  {getStageLabel(stageModal.nextStage)}
                 </span>
               </div>
               <div>

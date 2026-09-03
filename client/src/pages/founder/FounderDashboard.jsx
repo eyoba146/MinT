@@ -50,43 +50,43 @@ const STAGE_META = {
     border: "border-blue-200",
   },
   meeting_scheduled: {
-    label: "Meeting",
+    label: "Meeting Set",
     color: "text-purple-600",
     bg: "bg-purple-50",
     border: "border-purple-200",
   },
   due_diligence: {
-    label: "Due Diligence",
+    label: "Startup Review",
     color: "text-amber-600",
     bg: "bg-amber-50",
     border: "border-amber-200",
   },
   term_sheet: {
-    label: "Term Sheet",
+    label: "Deal Proposal",
     color: "text-indigo-600",
     bg: "bg-indigo-50",
     border: "border-indigo-200",
   },
   investment_executed: {
-    label: "Invested",
+    label: "Investment Done",
     color: "text-teal-600",
     bg: "bg-teal-50",
     border: "border-teal-200",
   },
   grant_disbursed: {
-    label: "Grant",
+    label: "Grant Received",
     color: "text-emerald-600",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
   },
   guarantee_issued: {
-    label: "Guarantee",
+    label: "Guarantee Issued",
     color: "text-cyan-600",
     bg: "bg-cyan-50",
     border: "border-cyan-200",
   },
   closed: {
-    label: "Closed",
+    label: "Deal Closed",
     color: "text-slate-400",
     bg: "bg-slate-50",
     border: "border-slate-200",
@@ -96,6 +96,10 @@ const STAGE_META = {
 function formatCurrency(amount, currency = "ETB") {
   if (amount == null) return "—";
   return `${Number(amount).toLocaleString()} ${currency}`;
+}
+
+function getStageLabel(status) {
+  return STAGE_META[status]?.label || status.replace(/_/g, " ");
 }
 
 export default function FounderDashboard() {
@@ -158,6 +162,43 @@ export default function FounderDashboard() {
     }
   };
 
+  const handleTermSheetAction = async (connectionId, approved) => {
+    setActionLoading(connectionId);
+    try {
+      await apiRequest(`/startups/connections/${connectionId}/term-sheet`, {
+        method: "PATCH",
+        body: { approved },
+      });
+      toast(
+        approved ? "Term sheet approved" : "Term sheet declined",
+        "success",
+      );
+      await fetchData();
+    } catch (err) {
+      toast(err.message || "Action failed", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDealExecutionAction = async (connectionId, approved) => {
+    setActionLoading(connectionId);
+    try {
+      await apiRequest(`/startups/connections/${connectionId}/deal-execution`, {
+        method: "PATCH",
+        body: { approved },
+      });
+      toast(
+        approved ? "Deal execution confirmed" : "Deal execution declined",
+        "success",
+      );
+      await fetchData();
+    } catch (err) {
+      toast(err.message || "Action failed", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
   const handleRenew = async () => {
     try {
       await apiRequest("/startups/my/renew", { method: "POST", body: {} });
@@ -567,7 +608,7 @@ export default function FounderDashboard() {
                             <span
                               className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize shrink-0 ${group.bg} ${group.color} ${group.border}`}
                             >
-                              {conn.status.replace(/_/g, " ")}
+                              {getStageLabel(conn.status)}
                             </span>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -615,6 +656,84 @@ export default function FounderDashboard() {
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-1 rounded-lg">
                                   <Check className="w-3 h-3" /> Data room
                                   approved
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {conn.status === "term_sheet" && (
+                            <div className="mt-3 flex items-center gap-2">
+                              {!conn.termSheetApproved ? (
+                                <>
+                                  <button
+                                    onClick={() =>
+                                      handleTermSheetAction(conn._id, true)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60"
+                                  >
+                                    {actionLoading === conn._id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3 h-3" />
+                                    )}
+                                    Approve Term Sheet
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleTermSheetAction(conn._id, false)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-60"
+                                  >
+                                    <X className="w-3 h-3" /> Decline
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2 py-1 rounded-lg">
+                                  <Check className="w-3 h-3" /> Term sheet
+                                  approved
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {[
+                            "investment_executed",
+                            "grant_disbursed",
+                            "guarantee_issued",
+                          ].includes(conn.status) && (
+                            <div className="mt-3 flex items-center gap-2">
+                              {!conn.dealExecutionApproved ? (
+                                <>
+                                  <button
+                                    onClick={() =>
+                                      handleDealExecutionAction(conn._id, true)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-60"
+                                  >
+                                    {actionLoading === conn._id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3 h-3" />
+                                    )}
+                                    Confirm Deal Execution
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleDealExecutionAction(conn._id, false)
+                                    }
+                                    disabled={actionLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-60"
+                                  >
+                                    <X className="w-3 h-3" /> Decline
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg">
+                                  <Check className="w-3 h-3" /> Deal execution
+                                  confirmed
                                 </span>
                               )}
                             </div>
