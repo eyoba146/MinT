@@ -26,6 +26,8 @@ const {
   updateConnectionDetails,
   submitAnnualReport,
   approveDataRoom,
+  approveTermSheet,
+  approveDealExecution,
 } = require("../controllers/startupController");
 const { protect, restrictTo } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
@@ -55,6 +57,17 @@ router.patch(
   "/connections/:connectionId/data-room",
   restrictTo("founder"),
   approveDataRoom,
+);
+
+router.patch(
+  "/connections/:connectionId/term-sheet",
+  restrictTo("founder"),
+  approveTermSheet,
+);
+router.patch(
+  "/connections/:connectionId/deal-execution",
+  restrictTo("founder"),
+  approveDealExecution,
 );
 
 // Founder — profile management (with file upload support)

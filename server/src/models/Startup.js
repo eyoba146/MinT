@@ -43,6 +43,7 @@ const investorConnectionSchema = new mongoose.Schema(
         "grant_disbursed",
         "guarantee_issued",
         "closed",
+        "declined",
       ],
       default: "interest_expressed",
     },
@@ -50,6 +51,16 @@ const investorConnectionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    termSheetApproved: {
+      type: Boolean,
+      default: false,
+    },
+    dealExecutionApproved: {
+      type: Boolean,
+      default: false,
+    },
+    declinedAt: { type: Date, default: null },
+    declineReason: { type: String, default: "" },
     investmentType: {
       type: String,
       enum: [
@@ -69,7 +80,6 @@ const investorConnectionSchema = new mongoose.Schema(
   },
   { _id: true },
 );
-
 const grantRecordSchema = new mongoose.Schema(
   {
     grantProgram: { type: String, required: true },

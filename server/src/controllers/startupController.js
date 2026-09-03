@@ -1731,7 +1731,33 @@ exports.updateConnectionStage = async (req, res) => {
         message: "Founder must approve data room access before you can proceed",
       });
     }
+    // FOUNDER GATE: term sheet approval required before moving to execution
+    if (
+      ["investment_executed", "grant_disbursed", "guarantee_issued"].includes(
+        stage,
+      ) &&
+      connection.status === "term_sheet" &&
+      !connection.termSheetApproved
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Founder must approve the term sheet before you can proceed",
+      });
+    }
 
+    // FOUNDER GATE: deal execution approval required before closing
+    if (
+      stage === "closed" &&
+      ["investment_executed", "grant_disbursed", "guarantee_issued"].includes(
+        connection.status,
+      ) &&
+      !connection.dealExecutionApproved
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Founder must confirm deal execution before closing",
+      });
+    }
     const previousStage = connection.status;
     connection.status = stage;
     connection.lastActivityAt = new Date();
@@ -1803,12 +1829,10 @@ exports.approveDataRoom = async (req, res) => {
 
     // Must be the founder
     if (startup.founder.toString() !== req.user._id.toString()) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Only the founder can approve data room access",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Only the founder can approve data room access",
+      });
     }
 
     const connection = startup.investorConnections.id(connectionId);
@@ -1853,10 +1877,11 @@ exports.approveDataRoom = async (req, res) => {
         data: connection,
       });
     } else {
-      // Decline: remove the connection entirely
-      startup.investorConnections = startup.investorConnections.filter(
-        (c) => c._id.toString() !== connectionId,
-      );
+      // Preserve the connection with declined status
+      connection.status = "declined";
+      connection.declinedAt = new Date();
+      connection.declineReason = "Declined by founder at data room stage";
+      connection.lastActivityAt = new Date();
       await startup.save();
 
       // Notify investor
@@ -1876,11 +1901,208 @@ exports.approveDataRoom = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: "Interest declined and connection removed",
+        message: "Interest declined and connection marked as declined",
       });
     }
   } catch (error) {
     console.error("Approve data room error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+// ====================== FOUNDER: APPROVE / DECLINE TERM SHEET ======================
+exports.approveTermSheet = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { approved } = req.body;
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    }).populate("investorConnections.investor", "fullName email");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    if (startup.founder.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the founder can approve the term sheet",
+      });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    if (connection.status !== "term_sheet") {
+      return res.status(400).json({
+        success: false,
+        message: "Term sheet approval is only valid at the term_sheet stage",
+      });
+    }
+
+    if (approved) {
+      connection.termSheetApproved = true;
+      connection.lastActivityAt = new Date();
+      await startup.save();
+
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Term Sheet Approved – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0d9488;">Term Sheet Approved</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has approved the term sheet. You may now advance the deal to the execution stage.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Term sheet approved",
+        data: connection,
+      });
+    } else {
+      connection.status = "declined";
+      connection.declinedAt = new Date();
+      connection.declineReason = "Declined by founder at term sheet stage";
+      connection.lastActivityAt = new Date();
+      await startup.save();
+
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Term Sheet Declined – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #64748b;">Term Sheet Declined</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has declined the term sheet.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Term sheet declined and connection marked as declined",
+      });
+    }
+  } catch (error) {
+    console.error("Approve term sheet error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
+// ====================== FOUNDER: APPROVE / DECLINE DEAL EXECUTION ======================
+exports.approveDealExecution = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { approved } = req.body;
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    }).populate("investorConnections.investor", "fullName email");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    if (startup.founder.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the founder can confirm deal execution",
+      });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const validStages = [
+      "investment_executed",
+      "grant_disbursed",
+      "guarantee_issued",
+    ];
+    if (!validStages.includes(connection.status)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Deal execution confirmation is only valid after investment/grant/guarantee",
+      });
+    }
+
+    if (approved) {
+      connection.dealExecutionApproved = true;
+      connection.lastActivityAt = new Date();
+      await startup.save();
+
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Deal Execution Confirmed – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0d9488;">Deal Execution Confirmed</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has confirmed the deal execution. The deal can now be closed.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Deal execution confirmed",
+        data: connection,
+      });
+    } else {
+      connection.status = "declined";
+      connection.declinedAt = new Date();
+      connection.declineReason = "Declined by founder at deal execution stage";
+      connection.lastActivityAt = new Date();
+      await startup.save();
+
+      const investorEmail = connection.investor?.email;
+      if (investorEmail) {
+        await sendEmail({
+          to: investorEmail,
+          subject: `Deal Execution Declined – ${startup.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #64748b;">Deal Execution Declined</h2>
+              <p>The founder of <strong>${startup.companyName}</strong> has declined the deal execution.</p>
+            </div>
+          `,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Deal execution declined and connection marked as declined",
+      });
+    }
+  } catch (error) {
+    console.error("Approve deal execution error:", error);
     res.status(500).json({
       success: false,
       message: error.message || "Server error",

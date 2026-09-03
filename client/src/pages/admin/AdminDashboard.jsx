@@ -16,13 +16,18 @@ import {
   Inbox,
   AlertTriangle,
   ExternalLink,
+  HelpCircle,
 } from "lucide-react";
 
 const TABS = [
   { key: "pending", label: "Queue" },
-  { key: "verified", label: "Designated" },
+  { key: "under_review", label: "Under Review" },
+  { key: "clarification_needed", label: "Clarification" },
+  { key: "designated", label: "Designated" },
   { key: "rejected", label: "Rejected" },
   { key: "suspended", label: "Suspended" },
+  { key: "revoked", label: "Revoked" },
+  { key: "expired", label: "Expired" },
   { key: "all", label: "All" },
 ];
 
@@ -85,7 +90,10 @@ export default function AdminDashboard() {
 
   const isOverdue = (s) => {
     if (!s.reviewDueAt) return false;
-    if (!["pending", "submitted", "under_review"].includes(s.status)) return false;
+    if (
+      !["submitted", "under_review", "clarification_needed"].includes(s.status)
+    )
+      return false;
     return new Date(s.reviewDueAt) < new Date();
   };
 
@@ -120,12 +128,49 @@ export default function AdminDashboard() {
         </div>
       }
     >
-      <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-        <StatCard label="In queue" value={stats?.pending ?? 0} icon={Inbox} color="amber" />
-        <StatCard label="Overdue" value={stats?.overdue ?? 0} icon={AlertTriangle} color="red" />
-        <StatCard label="Designated" value={stats?.verified ?? 0} icon={CheckCircle} color="teal" />
-        <StatCard label="Investors" value={stats?.totalInvestors ?? 0} icon={Users} color="purple" />
-        <StatCard label="Total startups" value={stats?.totalStartups ?? 0} icon={Building2} color="blue" />
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
+        <StatCard
+          label="Submitted"
+          value={stats?.submitted ?? 0}
+          icon={Inbox}
+          color="amber"
+        />
+        <StatCard
+          label="Under Review"
+          value={stats?.underReview ?? 0}
+          icon={Search}
+          color="blue"
+        />
+        <StatCard
+          label="Clarification"
+          value={stats?.clarificationNeeded ?? 0}
+          icon={HelpCircle}
+          color="amber"
+        />
+        <StatCard
+          label="Overdue"
+          value={stats?.overdue ?? 0}
+          icon={AlertTriangle}
+          color="red"
+        />
+        <StatCard
+          label="Designated"
+          value={stats?.designated ?? 0}
+          icon={CheckCircle}
+          color="teal"
+        />
+        <StatCard
+          label="Investors"
+          value={stats?.totalInvestors ?? 0}
+          icon={Users}
+          color="purple"
+        />
+        <StatCard
+          label="Total Startups"
+          value={stats?.totalStartups ?? 0}
+          icon={Building2}
+          color="blue"
+        />
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -150,7 +195,10 @@ export default function AdminDashboard() {
           className="px-4 sm:px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3"
         >
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -185,7 +233,9 @@ export default function AdminDashboard() {
         ) : startups.length === 0 ? (
           <div className="py-16 text-center">
             <Inbox className="mx-auto text-slate-300 mb-3" size={28} />
-            <p className="text-sm font-medium text-slate-700">No applications found</p>
+            <p className="text-sm font-medium text-slate-700">
+              No applications found
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -198,23 +248,31 @@ export default function AdminDashboard() {
                   <th className="px-4 py-3 font-semibold">Submitted</th>
                   <th className="px-4 py-3 font-semibold">Due</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 sm:px-6 py-3 font-semibold text-right">Action</th>
+                  <th className="px-4 sm:px-6 py-3 font-semibold text-right">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {startups.map((item) => (
                   <tr key={item._id} className="hover:bg-slate-50/80">
                     <td className="px-4 sm:px-6 py-4">
-                      <div className="font-semibold text-slate-900">{item.companyName}</div>
+                      <div className="font-semibold text-slate-900">
+                        {item.companyName}
+                      </div>
                       <div className="text-xs text-slate-500">
                         {item.founder?.fullName || "—"}
                         {item.founder?.email ? ` · ${item.founder.email}` : ""}
                       </div>
                     </td>
                     <td className="px-4 py-4 text-slate-600">{item.sector}</td>
-                    <td className="px-4 py-4 text-slate-600">{item.country || "—"}</td>
                     <td className="px-4 py-4 text-slate-600">
-                      {new Date(item.submittedAt || item.createdAt).toLocaleDateString()}
+                      {item.country || "—"}
+                    </td>
+                    <td className="px-4 py-4 text-slate-600">
+                      {new Date(
+                        item.submittedAt || item.createdAt,
+                      ).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-4">
                       {item.reviewDueAt ? (
