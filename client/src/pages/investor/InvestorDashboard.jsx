@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { useLocation } from "react-router-dom";
 import { apiRequest } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import StartupCard from "../../components/StartupCard";
@@ -136,6 +137,34 @@ function connectionStatusBadge(status) {
 export default function InvestorDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
+  const [messagesByConnection, setMessagesByConnection] = useState({});
+  const [messageInputs, setMessageInputs] = useState({});
+  const [messageLoading, setMessageLoading] = useState(null);
+  const [showMessages, setShowMessages] = useState(null);
+
+  useEffect(() => {
+    setShowMessages(null);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!showMessages) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiRequest(
+          `/startups/connections/${showMessages}/messages`,
+        );
+        setMessagesByConnection((prev) => ({
+          ...prev,
+          [showMessages]: res.data || [],
+        }));
+      } catch (err) {
+        console.error("Poll messages error:", err);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showMessages]);
+
   const [connections, setConnections] = useState([]);
   const [recommended, setRecommended] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -165,11 +194,6 @@ export default function InvestorDashboard() {
     notes: "",
   });
   const [transferLoading, setTransferLoading] = useState(null);
-  const [messagesByConnection, setMessagesByConnection] = useState({});
-  const [messageInputs, setMessageInputs] = useState({});
-  const [messageLoading, setMessageLoading] = useState(null);
-  const [showMessages, setShowMessages] = useState(null);
-
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -345,25 +369,22 @@ export default function InvestorDashboard() {
   const handleSendMessage = async (connectionId) => {
     const text = (messageInputs[connectionId] || "").trim();
     if (!text) return;
-    setMessageLoading(connectionId);
     try {
-      await apiRequest(`/startups/connections/${connectionId}/messages`, {
-        method: "POST",
-        body: { text },
-      });
-      setMessageInputs((prev) => ({ ...prev, [connectionId]: "" }));
       const res = await apiRequest(
         `/startups/connections/${connectionId}/messages`,
+        {
+          method: "POST",
+          body: { text },
+        },
       );
+      // Optimistically append the new message
       setMessagesByConnection((prev) => ({
         ...prev,
-        [connectionId]: res.data || [],
+        [connectionId]: [...(prev[connectionId] || []), res.data],
       }));
-      toast("Message sent", "success");
+      setMessageInputs((prev) => ({ ...prev, [connectionId]: "" }));
     } catch (err) {
       toast(err.message || "Failed to send message", "error");
-    } finally {
-      setMessageLoading(null);
     }
   };
   const openStageModal = (connection, nextStage) => {
@@ -763,63 +784,6 @@ export default function InvestorDashboard() {
                             >
                               <MessageSquare className="w-3 h-3" /> Messages
                             </button>
-
-                            {showMessages === conn._id && (
-                              <div className="mt-3 bg-white rounded-xl border border-slate-200 p-3 space-y-2">
-                                {messageLoading === conn._id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                                ) : (messagesByConnection[conn._id] || [])
-                                    .length === 0 ? (
-                                  <p className="text-xs text-slate-500 text-center">
-                                    No messages yet
-                                  </p>
-                                ) : (
-                                  <div className="max-h-40 overflow-y-auto space-y-2">
-                                    {(messagesByConnection[conn._id] || []).map(
-                                      (msg, idx) => (
-                                        <div
-                                          key={msg._id || idx}
-                                          className="text-xs"
-                                        >
-                                          <div className="font-semibold text-slate-800">
-                                            {msg.sender?.fullName || "User"}
-                                          </div>
-                                          <p className="text-slate-600">
-                                            {msg.text}
-                                          </p>
-                                          <span className="text-[10px] text-slate-400">
-                                            {new Date(
-                                              msg.createdAt,
-                                            ).toLocaleString()}
-                                          </span>
-                                        </div>
-                                      ),
-                                    )}
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="text"
-                                    value={messageInputs[conn._id] || ""}
-                                    onChange={(e) =>
-                                      setMessageInputs((prev) => ({
-                                        ...prev,
-                                        [conn._id]: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="Type a message..."
-                                    className="flex-1 px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
-                                  />
-                                  <button
-                                    onClick={() => handleSendMessage(conn._id)}
-                                    disabled={messageLoading === conn._id}
-                                    className="px-2 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-bold"
-                                  >
-                                    Send
-                                  </button>
-                                </div>
-                              </div>
-                            )}
                             <div className="mt-3 flex items-center gap-2">
                               <Link
                                 to={`/investor/directory/${conn.startup?._id}`}
@@ -1414,6 +1378,124 @@ export default function InvestorDashboard() {
                     Save Details
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Full-screen Chat Modal */}
+      {showMessages && (
+        <div className="fixed top-0 right-0 bottom-0 left-72 z-50 flex flex-col bg-white">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                Messages
+              </h3>
+              <p className="text-xs text-slate-500">
+                {connections.find((c) => c._id === showMessages)?.startup
+                  ?.companyName || "Startup"}{" "}
+                — Founder
+              </p>
+            </div>
+            <button
+              onClick={() => setShowMessages(null)}
+              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-slate-50">
+            {messageLoading === showMessages ? (
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mt-10" />
+            ) : (messagesByConnection[showMessages] || []).length === 0 ? (
+              <div className="text-center text-sm text-slate-400 mt-10">
+                No messages yet. Start the conversation.
+              </div>
+            ) : (
+              (messagesByConnection[showMessages] || []).map((msg, idx) => {
+                const currentUserId = String(
+                  user?._id || user?.id || user?.userId,
+                );
+                const senderId = String(
+                  msg.sender?._id || msg.sender?.id || msg.sender,
+                );
+                const isOwn = currentUserId === senderId;
+                const senderName = isOwn
+                  ? "You"
+                  : msg.sender?.fullName || "Other Party";
+                const initial = senderName.charAt(0).toUpperCase();
+                return (
+                  <div key={msg._id || idx} className="flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
+                        isOwn
+                          ? "bg-gradient-to-br from-teal-500 to-emerald-600 text-white"
+                          : "bg-gradient-to-br from-slate-400 to-slate-500 text-white"
+                      }`}
+                    >
+                      {initial}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span
+                          className={`text-[13px] font-semibold ${
+                            isOwn ? "text-teal-800" : "text-slate-700"
+                          }`}
+                        >
+                          {senderName}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {new Date(msg.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div
+                        className={`inline-block max-w-full px-4 py-2.5 rounded-2xl ${
+                          isOwn
+                            ? "bg-white border border-teal-100 text-slate-800"
+                            : "bg-slate-100/80 text-slate-700"
+                        }`}
+                      >
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                          {msg.text}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="border-t border-slate-200 p-4 bg-white">
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={messageInputs[showMessages] || ""}
+                onChange={(e) =>
+                  setMessageInputs((prev) => ({
+                    ...prev,
+                    [showMessages]: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(showMessages);
+                  }
+                }}
+                placeholder="Type your message... (Enter to send)"
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+              <button
+                onClick={() => handleSendMessage(showMessages)}
+                disabled={messageLoading === showMessages}
+                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold disabled:opacity-60"
+              >
+                Send
               </button>
             </div>
           </div>
