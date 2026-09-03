@@ -26,6 +26,8 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Briefcase,
+  Rocket,
 } from "lucide-react";
 
 export default function AdminAnalytics() {
@@ -349,8 +351,8 @@ export default function AdminAnalytics() {
         {/* Secondary Stakeholder Metrics Ribbon */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold text-sm shrink-0">
-              💼
+            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+              <Briefcase className="w-4 h-4" />
             </div>
             <div>
               <div className="text-base font-black text-slate-900">
@@ -363,8 +365,8 @@ export default function AdminAnalytics() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm shrink-0">
-              🚀
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+              <Rocket className="w-4 h-4" />
             </div>
             <div>
               <div className="text-base font-black text-slate-900">
@@ -377,8 +379,8 @@ export default function AdminAnalytics() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold text-sm shrink-0">
-              🏢
+            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+              <Building2 className="w-4 h-4" />
             </div>
             <div>
               <div className="text-base font-black text-slate-900">
@@ -391,8 +393,8 @@ export default function AdminAnalytics() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
-              ✨
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4" />
             </div>
             <div>
               <div className="text-base font-black text-slate-900">

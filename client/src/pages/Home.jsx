@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useDesignation } from "../context/DesignationContext";
 import { useAuth } from "../context/AuthContext";
@@ -11,11 +11,14 @@ import {
   Award,
   ShieldCheck,
   ArrowRight,
-  Sparkles,
+  ClipboardCheck,
   Network,
   Zap,
   Check,
   CheckCircle2,
+  Briefcase,
+  Rocket,
+  Building2,
 } from "lucide-react";
 
 export default function Home() {
@@ -23,6 +26,18 @@ export default function Home() {
   const { user, isAuthenticated } = useAuth();
   const [quickCheckModal, setQuickCheckModal] = useState(false);
   const [previewCertApp, setPreviewCertApp] = useState(null);
+
+  const [typedText, setTypedText] = useState("");
+  useEffect(() => {
+    const fullText = "Digital Innovation";
+    let i = 0;
+    const interval = setInterval(() => {
+      setTypedText(fullText.slice(0, i + 1));
+      i += 1;
+      if (i === fullText.length) clearInterval(interval);
+    }, 80);
+    return () => clearInterval(interval);
+  }, []);
 
   const [quickFormData, setQuickFormData] = useState({
     legalName: "My Ethiopian Tech Venture",
@@ -40,14 +55,30 @@ export default function Home() {
   });
 
   const designatedList = (applications || []).filter(
-    (a) => a.status === "designated" || a.status === "verified" || !a.status
+    (a) => a.status === "designated" || a.status === "verified" || !a.status,
   );
 
   const tiers = proclamation?.incentiveTiers || [
-    { tier: "Tax incentives", desc: "Access pathways to profit tax relief for designated startups.", category: "Fiscal" },
-    { tier: "FX prioritization", desc: "Support for foreign exchange allocation where applicable.", category: "Finance" },
-    { tier: "Investor visibility", desc: "Appear in the official designated startup registry.", category: "Market" },
-    { tier: "Digital certificate", desc: "Receive a verifiable MinT designation certificate.", category: "Trust" },
+    {
+      tier: "Tax incentives",
+      desc: "Access pathways to profit tax relief for designated startups.",
+      category: "Fiscal",
+    },
+    {
+      tier: "FX prioritization",
+      desc: "Support for foreign exchange allocation where applicable.",
+      category: "Finance",
+    },
+    {
+      tier: "Investor visibility",
+      desc: "Appear in the official designated startup registry.",
+      category: "Market",
+    },
+    {
+      tier: "Digital certificate",
+      desc: "Receive a verifiable MinT designation certificate.",
+      category: "Trust",
+    },
   ];
 
   return (
@@ -67,13 +98,15 @@ export default function Home() {
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.1]">
             Accelerating{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-200 via-cyan-200 to-amber-300">
-              Digital Innovation
+              {typedText}
             </span>
+            <span className="border-r-2 border-amber-300 ml-1 animate-pulse" />
           </h1>
 
           <p className="max-w-2xl mx-auto text-base sm:text-lg text-slate-300 leading-relaxed">
-            Connect Ethiopian startups, investors, and ecosystem builders. Apply for official
-            designation, unlock incentives, and grow with a trusted national innovation platform.
+            Connect Ethiopian startups, investors, and ecosystem builders. Apply
+            for official designation, unlock incentives, and grow with a trusted
+            national innovation platform.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
@@ -96,7 +129,7 @@ export default function Home() {
               onClick={() => setQuickCheckModal(true)}
               className="px-6 py-3.5 rounded-2xl border border-white/20 bg-white/10 hover:bg-white/20 text-white font-semibold text-sm backdrop-blur-md transition-all shadow-sm flex items-center gap-2"
             >
-              <Sparkles className="w-4 h-4 text-amber-400" />
+              <ClipboardCheck className="w-4 h-4 text-teal-300" />
               <span>Check Eligibility</span>
             </button>
 
@@ -119,19 +152,25 @@ export default function Home() {
               </div>
             </div>
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-              <div className="text-2xl sm:text-3xl font-extrabold text-white">3 Years</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                3 Years
+              </div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-1">
                 Tax Pathway
               </div>
             </div>
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-              <div className="text-2xl sm:text-3xl font-extrabold text-white">Fast-Track</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                Fast-Track
+              </div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-1">
                 FX Support
               </div>
             </div>
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-              <div className="text-2xl sm:text-3xl font-extrabold text-white">100% Digital</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                100% Digital
+              </div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-1">
                 Certificates
               </div>
@@ -151,8 +190,8 @@ export default function Home() {
             What designation unlocks
           </h2>
           <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-            Official recognition, visibility to investors, and access to support pathways for
-            Ethiopian innovation enterprises.
+            Official recognition, visibility to investors, and access to support
+            pathways for Ethiopian innovation enterprises.
           </p>
         </div>
 
@@ -166,8 +205,12 @@ export default function Home() {
                 <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-800 flex items-center justify-center font-extrabold mb-4 group-hover:scale-110 transition-transform">
                   0{idx + 1}
                 </div>
-                <h3 className="text-base font-bold text-slate-900 mb-2">{tier.tier}</h3>
-                <p className="text-sm text-slate-600 leading-relaxed">{tier.desc}</p>
+                <h3 className="text-base font-bold text-slate-900 mb-2">
+                  {tier.tier}
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  {tier.desc}
+                </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-teal-800">
                 <span>{tier.category}</span>
@@ -219,7 +262,9 @@ export default function Home() {
                     {app.legalName || app.name || app.companyName}
                   </h3>
                   {app.tradeName && (
-                    <p className="text-sm text-teal-800 font-medium">&ldquo;{app.tradeName}&rdquo;</p>
+                    <p className="text-sm text-teal-800 font-medium">
+                      &ldquo;{app.tradeName}&rdquo;
+                    </p>
                   )}
                 </div>
                 <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
@@ -275,8 +320,8 @@ export default function Home() {
               Start your designation journey
             </h2>
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-              Whether you are building a startup or running an incubator, MinT provides digital
-              accreditation and a trusted national registry.
+              Whether you are building a startup or running an incubator, MinT
+              provides digital accreditation and a trusted national registry.
             </p>
             <div className="flex flex-wrap gap-4 pt-4">
               <Link
@@ -311,8 +356,8 @@ export default function Home() {
                 Transparent designation lifecycle
               </h2>
               <p className="text-slate-600 leading-relaxed mb-6 text-sm sm:text-base">
-                From application to certificate: a structured review with clear status updates and
-                secure document handling.
+                From application to certificate: a structured review with clear
+                status updates and secure document handling.
               </p>
               <div className="space-y-3">
                 {[
@@ -321,7 +366,10 @@ export default function Home() {
                   "Decision: designate, request more info, or reject",
                   "Digital certificate and public registry listing",
                 ].map((item, idx) => (
-                  <div key={idx} className="flex items-start gap-3 text-sm text-slate-700">
+                  <div
+                    key={idx}
+                    className="flex items-start gap-3 text-sm text-slate-700"
+                  >
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                     <span>{item}</span>
                   </div>
@@ -334,10 +382,22 @@ export default function Home() {
                 <span>Application steps</span>
               </div>
               {[
-                { title: "1. Online submission", desc: "Company details, sector, and supporting documents." },
-                { title: "2. Technical & legal review", desc: "MinT reviews eligibility and innovation value." },
-                { title: "3. Designation decision", desc: "Approve, request more information, or reject." },
-                { title: "4. Certificate issued", desc: "Digital certificate and registry visibility." },
+                {
+                  title: "1. Online submission",
+                  desc: "Company details, sector, and supporting documents.",
+                },
+                {
+                  title: "2. Technical & legal review",
+                  desc: "MinT reviews eligibility and innovation value.",
+                },
+                {
+                  title: "3. Designation decision",
+                  desc: "Approve, request more information, or reject.",
+                },
+                {
+                  title: "4. Certificate issued",
+                  desc: "Digital certificate and registry visibility.",
+                },
               ].map((step, i) => (
                 <div
                   key={i}
@@ -347,8 +407,12 @@ export default function Home() {
                     {i + 1}
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-slate-900">{step.title}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{step.desc}</div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {step.title}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {step.desc}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -368,19 +432,30 @@ export default function Home() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">Registration date</label>
+              <label className="font-semibold text-slate-700 block mb-1">
+                Registration date
+              </label>
               <input
                 type="date"
                 value={quickFormData.regDate}
-                onChange={(e) => setQuickFormData({ ...quickFormData, regDate: e.target.value })}
+                onChange={(e) =>
+                  setQuickFormData({
+                    ...quickFormData,
+                    regDate: e.target.value,
+                  })
+                }
                 className="w-full p-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:ring-2 focus:ring-teal-500"
               />
             </div>
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">Sector</label>
+              <label className="font-semibold text-slate-700 block mb-1">
+                Sector
+              </label>
               <select
                 value={quickFormData.sector}
-                onChange={(e) => setQuickFormData({ ...quickFormData, sector: e.target.value })}
+                onChange={(e) =>
+                  setQuickFormData({ ...quickFormData, sector: e.target.value })
+                }
                 className="w-full p-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:ring-2 focus:ring-teal-500"
               >
                 <option value="FinTech">FinTech</option>
@@ -392,7 +467,9 @@ export default function Home() {
               </select>
             </div>
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">Ethiopian ownership (%)</label>
+              <label className="font-semibold text-slate-700 block mb-1">
+                Ethiopian ownership (%)
+              </label>
               <input
                 type="number"
                 min="0"
@@ -408,7 +485,9 @@ export default function Home() {
               />
             </div>
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">Full-time staff</label>
+              <label className="font-semibold text-slate-700 block mb-1">
+                Full-time staff
+              </label>
               <input
                 type="number"
                 value={quickFormData.fullTimeEmployees}

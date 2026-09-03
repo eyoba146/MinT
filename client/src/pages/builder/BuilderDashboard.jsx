@@ -5,13 +5,7 @@ import { useToast } from "../../context/ToastContext";
 import { apiRequest } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import StatusBadge from "../../components/StatusBadge";
-import {
-  Loader2,
-  PlusCircle,
-  Award,
-  FileText,
-  ArrowRight,
-} from "lucide-react";
+import { Loader2, PlusCircle, Award, FileText, ArrowRight } from "lucide-react";
 
 export default function BuilderDashboard() {
   const { user } = useAuth();
@@ -157,7 +151,9 @@ export default function BuilderDashboard() {
                   <>
                     <br />
                     Valid until{" "}
-                    {new Date(builder.designationExpiresAt).toLocaleDateString()}
+                    {new Date(
+                      builder.designationExpiresAt,
+                    ).toLocaleDateString()}
                   </>
                 )}
               </p>
@@ -171,7 +167,9 @@ export default function BuilderDashboard() {
           )}
 
           {!designated &&
-            ["pending", "submitted", "under_review"].includes(builder.status) && (
+            ["pending", "submitted", "under_review"].includes(
+              builder.status,
+            ) && (
               <div className="rounded-2xl bg-amber-50 border border-amber-100 p-5 text-sm text-amber-900">
                 Application is in the review queue
                 {builder.reviewDueAt && (
