@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   Lock,
   Unlock,
+  FileDown,
 } from "lucide-react";
 
 const STAGE_META = {
@@ -115,6 +116,10 @@ export default function FounderDashboard() {
   const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [reportUrl, setReportUrl] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [messagesByConnection, setMessagesByConnection] = useState({});
+  const [messageInputs, setMessageInputs] = useState({});
+  const [messageLoading, setMessageLoading] = useState(null);
+  const [showMessages, setShowMessages] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -209,6 +214,93 @@ export default function FounderDashboard() {
     }
   };
 
+  const handleGenerateDocument = async (connectionId, documentType) => {
+    setActionLoading(connectionId);
+    try {
+      await apiRequest(
+        `/startups/connections/${connectionId}/generate-document`,
+        {
+          method: "POST",
+          body: { documentType },
+        },
+      );
+      toast("Document generated successfully", "success");
+      await fetchData();
+    } catch (err) {
+      toast(err.message || "Failed to generate document", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+  const handleVerifyTransfer = async (connectionId, verified) => {
+    setActionLoading(connectionId);
+    try {
+      await apiRequest(
+        `/startups/connections/${connectionId}/verify-transfer`,
+        {
+          method: "POST",
+          body: { verified },
+        },
+      );
+      toast(
+        verified ? "Transfer verified" : "Transfer verification removed",
+        "success",
+      );
+      await fetchData();
+    } catch (err) {
+      toast(err.message || "Failed to verify transfer", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+  const toggleMessages = async (connectionId) => {
+    if (showMessages === connectionId) {
+      setShowMessages(null);
+      return;
+    }
+    setShowMessages(connectionId);
+    if (!messagesByConnection[connectionId]) {
+      setMessageLoading(connectionId);
+      try {
+        const res = await apiRequest(
+          `/startups/connections/${connectionId}/messages`,
+        );
+        setMessagesByConnection((prev) => ({
+          ...prev,
+          [connectionId]: res.data || [],
+        }));
+      } catch (err) {
+        toast(err.message || "Failed to load messages", "error");
+      } finally {
+        setMessageLoading(null);
+      }
+    }
+  };
+
+  const handleSendMessage = async (connectionId) => {
+    const text = (messageInputs[connectionId] || "").trim();
+    if (!text) return;
+    setMessageLoading(connectionId);
+    try {
+      await apiRequest(`/startups/connections/${connectionId}/messages`, {
+        method: "POST",
+        body: { text },
+      });
+      setMessageInputs((prev) => ({ ...prev, [connectionId]: "" }));
+      const res = await apiRequest(
+        `/startups/connections/${connectionId}/messages`,
+      );
+      setMessagesByConnection((prev) => ({
+        ...prev,
+        [connectionId]: res.data || [],
+      }));
+      toast("Message sent", "success");
+    } catch (err) {
+      toast(err.message || "Failed to send message", "error");
+    } finally {
+      setMessageLoading(null);
+    }
+  };
   const handleClarificationResponse = async (clarificationId) => {
     const response = (clarificationResponses[clarificationId] || "").trim();
     if (!response || response.length < 5) {
@@ -738,7 +830,128 @@ export default function FounderDashboard() {
                               )}
                             </div>
                           )}
+                          {(conn.status === "term_sheet" ||
+                            conn.status === "investment_executed" ||
+                            conn.status === "grant_disbursed" ||
+                            conn.status === "guarantee_issued" ||
+                            conn.status === "closed") && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <button
+                                onClick={() =>
+                                  handleGenerateDocument(conn._id, "term_sheet")
+                                }
+                                disabled={actionLoading === conn._id}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg disabled:opacity-60"
+                              >
+                                <FileDown className="w-3 h-3" /> Term Sheet
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleGenerateDocument(
+                                    conn._id,
+                                    "investment_agreement",
+                                  )
+                                }
+                                disabled={actionLoading === conn._id}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg disabled:opacity-60"
+                              >
+                                <FileDown className="w-3 h-3" /> Agreement
+                              </button>
+                            </div>
+                          )}
+                          {[
+                            "investment_executed",
+                            "grant_disbursed",
+                            "guarantee_issued",
+                            "closed",
+                          ].includes(conn.status) && (
+                            <div className="mt-3 flex items-center gap-2">
+                              {!conn.transferVerified ? (
+                                <button
+                                  onClick={() =>
+                                    handleVerifyTransfer(conn._id, true)
+                                  }
+                                  disabled={actionLoading === conn._id}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-60"
+                                >
+                                  {actionLoading === conn._id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3 h-3" />
+                                  )}
+                                  Verify Transfer
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg">
+                                  <Check className="w-3 h-3" /> Transfer
+                                  Verified
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => toggleMessages(conn._id)}
+                            className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                          >
+                            <MessageSquare className="w-3 h-3" /> Messages
+                          </button>
 
+                          {showMessages === conn._id && (
+                            <div className="mt-3 bg-white rounded-xl border border-slate-200 p-3 space-y-2">
+                              {messageLoading === conn._id ? (
+                                <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                              ) : (messagesByConnection[conn._id] || [])
+                                  .length === 0 ? (
+                                <p className="text-xs text-slate-500 text-center">
+                                  No messages yet
+                                </p>
+                              ) : (
+                                <div className="max-h-40 overflow-y-auto space-y-2">
+                                  {(messagesByConnection[conn._id] || []).map(
+                                    (msg, idx) => (
+                                      <div
+                                        key={msg._id || idx}
+                                        className="text-xs"
+                                      >
+                                        <div className="font-semibold text-slate-800">
+                                          {msg.sender?.fullName || "User"}
+                                        </div>
+                                        <p className="text-slate-600">
+                                          {msg.text}
+                                        </p>
+                                        <span className="text-[10px] text-slate-400">
+                                          {new Date(
+                                            msg.createdAt,
+                                          ).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={messageInputs[conn._id] || ""}
+                                  onChange={(e) =>
+                                    setMessageInputs((prev) => ({
+                                      ...prev,
+                                      [conn._id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Type a message..."
+                                  className="flex-1 px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                />
+                                <button
+                                  onClick={() => handleSendMessage(conn._id)}
+                                  disabled={messageLoading === conn._id}
+                                  className="px-2 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-bold"
+                                >
+                                  Send
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <div className="mt-2 text-[11px] text-slate-400">
                             Last activity:{" "}
                             {conn.lastActivityAt

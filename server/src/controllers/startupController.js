@@ -3,6 +3,8 @@ const CaseDecision = require("../models/CaseDecision");
 const DesignationCertificate = require("../models/DesignationCertificate");
 const sendEmail = require("../utils/sendEmail");
 const cloudinary = require("../config/cloudinary");
+const Document = require("../models/Document");
+const PDFDocument = require("pdfkit");
 const {
   evaluateStartupEligibility,
   addWorkingDays,
@@ -1873,6 +1875,7 @@ exports.getInvestorConnections = async (req, res) => {
       "investorConnections.investor": req.user._id,
     })
       .populate("founder", "fullName email")
+      .populate("investorConnections.messages.sender", "fullName email role")
       .select("companyName logo sector status investorConnections founder");
 
     const connections = [];
@@ -1917,6 +1920,7 @@ exports.getMyConnections = async (req, res) => {
         "investorConnections.investor",
         "fullName email organization investmentRange focus",
       )
+      .populate("investorConnections.messages.sender", "fullName email role")
       .select("companyName investorConnections");
 
     if (!startup) {
@@ -2449,6 +2453,324 @@ exports.updateConnectionDetails = async (req, res) => {
     });
   }
 };
+
+// ====================== CONNECTION MESSAGING ======================
+exports.sendConnectionMessage = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { text } = req.body;
+
+    if (!text || !text.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Message text is required" });
+    }
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    });
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const isInvestor =
+      connection.investor.toString() === req.user._id.toString();
+    const isFounder = startup.founder.toString() === req.user._id.toString();
+
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    connection.messages.push({
+      sender: req.user._id,
+      text: text.trim(),
+      createdAt: new Date(),
+    });
+    connection.lastActivityAt = new Date();
+    await startup.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Message sent",
+      data: connection.messages[connection.messages.length - 1],
+    });
+  } catch (error) {
+    console.error("Send message error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.getConnectionMessages = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    }).populate("investorConnections.messages.sender", "fullName email role");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const isInvestor =
+      connection.investor.toString() === req.user._id.toString();
+    const isFounder = startup.founder.toString() === req.user._id.toString();
+
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    res.status(200).json({
+      success: true,
+      count: connection.messages.length,
+      data: connection.messages,
+    });
+  } catch (error) {
+    console.error("Get messages error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+// ====================== VERIFY TRANSFER ======================
+exports.verifyTransfer = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { verified } = req.body; // true/false
+    const evidenceFile = req.file; // optional upload
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    });
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const isInvestor =
+      connection.investor.toString() === req.user._id.toString();
+    const isFounder = startup.founder.toString() === req.user._id.toString();
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    const allowedStatuses = [
+      "investment_executed",
+      "grant_disbursed",
+      "guarantee_issued",
+      "closed",
+    ];
+    if (!allowedStatuses.includes(connection.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Transfer verification only available after deal execution",
+      });
+    }
+
+    if (verified) {
+      connection.transferVerified = true;
+    } else {
+      connection.transferVerified = false;
+      connection.transferEvidenceUrl = null;
+    }
+
+    if (evidenceFile) {
+      const uploadResult = await streamUpload(
+        evidenceFile.buffer,
+        "mints/startups/transfer-evidence",
+      );
+      connection.transferEvidenceUrl = uploadResult.secure_url;
+    }
+
+    connection.lastActivityAt = new Date();
+    await startup.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Transfer verification updated",
+      data: connection,
+    });
+  } catch (error) {
+    console.error("Verify transfer error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+// ====================== GENERATE CONNECTION DOCUMENT ======================
+exports.generateConnectionDocument = async (req, res) => {
+  try {
+    const { connectionId } = req.params;
+    const { documentType } = req.body; // 'term_sheet' or 'investment_agreement'
+
+    if (!["term_sheet", "investment_agreement"].includes(documentType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid documentType. Use term_sheet or investment_agreement",
+      });
+    }
+
+    const startup = await Startup.findOne({
+      "investorConnections._id": connectionId,
+    })
+      .populate("founder", "fullName email")
+      .populate("investorConnections.investor", "fullName email organization");
+
+    if (!startup) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    const connection = startup.investorConnections.id(connectionId);
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Connection not found" });
+    }
+
+    // Auth: only founder or the connected investor
+    const isInvestor =
+      connection.investor._id.toString() === req.user._id.toString();
+    const isFounder =
+      startup.founder._id.toString() === req.user._id.toString();
+    if (!isInvestor && !isFounder) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    // Build PDF content
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    const pdfPromise = new Promise((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
+
+    const docTitle =
+      documentType === "term_sheet" ? "Term Sheet" : "Investment Agreement";
+
+    doc.fontSize(18).text("MinT Digital Innovation Hub", { align: "center" });
+    doc.fontSize(14).text(docTitle, { align: "center" });
+    doc.moveDown();
+
+    doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`);
+    doc.moveDown();
+
+    doc.fontSize(12).text("Parties", { underline: true });
+    doc.fontSize(10).text(`Startup: ${startup.companyName}`);
+    doc.text(`Founder: ${startup.founder?.fullName || "—"}`);
+    doc.text(`Investor: ${connection.investor?.fullName || "—"}`);
+    if (connection.investor?.organization) {
+      doc.text(`Investor Organization: ${connection.investor.organization}`);
+    }
+    doc.moveDown();
+
+    doc.fontSize(12).text("Deal Details", { underline: true });
+    doc.fontSize(10).text(`Stage: ${connection.status}`);
+    doc.text(
+      `Investment Type: ${connection.investmentType || "Not specified"}`,
+    );
+    if (connection.amount) {
+      doc.text(`Amount: ${connection.amount} ${connection.currency}`);
+    }
+    if (connection.notes) {
+      doc.text(`Notes: ${connection.notes}`);
+    }
+    doc.moveDown();
+
+    if (documentType === "term_sheet") {
+      doc.fontSize(12).text("Proposed Terms", { underline: true });
+      doc
+        .fontSize(10)
+        .text("1. Investment amount and valuation to be agreed upon.");
+      doc.text(
+        "2. Equity stake and governance rights subject to due diligence.",
+      );
+      doc.text("3. Founder approval required before execution.");
+      doc.text(
+        "4. This term sheet is non-binding until final agreement is signed.",
+      );
+    } else {
+      doc.fontSize(12).text("Investment Agreement", { underline: true });
+      doc
+        .fontSize(10)
+        .text("This document confirms the agreement between the parties.");
+      doc.text("The investor agrees to provide the funds described above.");
+      doc.text(
+        "The startup agrees to issue equity or other instruments as agreed.",
+      );
+      doc.text("Both parties confirm that all terms have been accepted.");
+    }
+
+    doc.end();
+    const pdfBuffer = await pdfPromise;
+
+    // Upload PDF to Cloudinary
+    const uploadResult = await streamUpload(
+      pdfBuffer,
+      "mints/startups/documents",
+    );
+
+    // Save as Document in data room
+    const generatedDoc = await Document.create({
+      startup: startup._id,
+      title: `${docTitle} - ${startup.companyName}`,
+      originalName: `${startup.companyName}-${documentType}.pdf`,
+      mimeType: "application/pdf",
+      size: pdfBuffer.length,
+      cloudinaryPublicId: uploadResult.public_id,
+      cloudinaryUrl: uploadResult.secure_url,
+      resourceType: uploadResult.resource_type || "raw",
+      uploadedBy: req.user._id,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `${docTitle} generated successfully`,
+      data: generatedDoc,
+    });
+  } catch (error) {
+    console.error("Generate document error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
+  }
+};
+
 // ====================== FOUNDER: SUBMIT ANNUAL REPORT ======================
 exports.submitAnnualReport = async (req, res) => {
   try {

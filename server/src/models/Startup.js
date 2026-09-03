@@ -77,9 +77,29 @@ const investorConnectionSchema = new mongoose.Schema(
     currency: { type: String, default: "ETB" },
     notes: { type: String, default: "" },
     lastActivityAt: { type: Date, default: Date.now },
+    messages: [
+      {
+        sender: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        text: { type: String, required: true, maxlength: 2000 },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    transferVerified: {
+      type: Boolean,
+      default: false,
+    },
+    transferEvidenceUrl: {
+      type: String,
+      default: null,
+    },
   },
   { _id: true },
 );
+
 const grantRecordSchema = new mongoose.Schema(
   {
     grantProgram: { type: String, required: true },

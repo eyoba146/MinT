@@ -1,5 +1,8 @@
 const express = require("express");
 const {
+  sendConnectionMessage,
+  getConnectionMessages,
+  verifyTransfer,
   createStartup,
   submitStartup,
   getMyStartup,
@@ -30,6 +33,7 @@ const {
   approveDataRoom,
   approveTermSheet,
   approveDealExecution,
+  generateConnectionDocument,
 } = require("../controllers/startupController");
 const { protect, restrictTo } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
@@ -71,7 +75,26 @@ router.patch(
   restrictTo("founder"),
   approveDealExecution,
 );
-
+router.post(
+  "/connections/:connectionId/generate-document",
+  generateConnectionDocument,
+);
+router.post(
+  "/connections/:connectionId/messages",
+  restrictTo("founder", "investor"),
+  sendConnectionMessage,
+);
+router.get(
+  "/connections/:connectionId/messages",
+  restrictTo("founder", "investor"),
+  getConnectionMessages,
+);
+router.post(
+  "/connections/:connectionId/verify-transfer",
+  restrictTo("founder", "investor"),
+  upload.single("evidence"),
+  verifyTransfer,
+);
 // Founder — profile management (with file upload support)
 router.post(
   "/",
