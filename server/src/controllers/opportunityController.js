@@ -1,7 +1,7 @@
-const Opportunity = require('../models/Opportunity');
+const Opportunity = require("../models/Opportunity");
 
-const INVESTOR_ALLOWED_TYPES = ['internship', 'job'];
-const STAFF_ROLES = ['admin', 'moderator'];
+const INVESTOR_ALLOWED_TYPES = ["internship", "job"];
+const STAFF_ROLES = ["admin", "moderator"];
 
 function isStaff(role) {
   return STAFF_ROLES.includes(role);
@@ -10,35 +10,46 @@ function isStaff(role) {
 // ====================== CREATE ======================
 exports.createOpportunity = async (req, res) => {
   try {
-    const { title, description, type, deadline, link, location } = req.body;
+    const {
+      title,
+      description,
+      type,
+      deadline,
+      link,
+      location,
+      eligibleDesignatedOnly,
+      fundingAmount,
+      currency,
+      programDetails,
+    } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
         success: false,
-        message: 'Title and description are required',
+        message: "Title and description are required",
       });
     }
 
     const role = req.user.role;
-    let finalType = type || 'announcement';
-    let status = 'pending';
+    let finalType = type || "announcement";
+    let status = "pending";
 
-    if (role === 'investor') {
+    if (role === "investor") {
       if (!INVESTOR_ALLOWED_TYPES.includes(finalType)) {
         return res.status(400).json({
           success: false,
-          message: 'Investors can only post internship or job offers',
+          message: "Investors can only post internship or job offers",
         });
       }
-      status = 'pending';
+      status = "pending";
     } else if (isStaff(role)) {
-      // Moderator / admin posts go live immediately
-      status = 'approved';
-      if (!finalType) finalType = 'announcement';
+      status = "approved";
+      if (!finalType) finalType = "announcement";
     } else {
       return res.status(403).json({
         success: false,
-        message: 'Only moderators, admins and investors can create opportunities',
+        message:
+          "Only moderators, admins and investors can create opportunities",
       });
     }
 
@@ -47,8 +58,12 @@ exports.createOpportunity = async (req, res) => {
       description: description.trim(),
       type: finalType,
       deadline: deadline || undefined,
-      link: link ? link.trim() : '',
-      location: location ? location.trim() : '',
+      link: link ? link.trim() : "",
+      location: location ? location.trim() : "",
+      eligibleDesignatedOnly: !!eligibleDesignatedOnly,
+      fundingAmount: fundingAmount ? Number(fundingAmount) : null,
+      currency: currency || "ETB",
+      programDetails: programDetails ? programDetails.trim() : "",
       status,
       createdBy: req.user._id,
     });
@@ -56,14 +71,14 @@ exports.createOpportunity = async (req, res) => {
     res.status(201).json({
       success: true,
       message:
-        status === 'approved'
-          ? 'Opportunity published successfully'
-          : 'Opportunity submitted. Waiting for staff approval.',
+        status === "approved"
+          ? "Opportunity published successfully"
+          : "Opportunity submitted. Waiting for staff approval.",
       data: opportunity,
     });
   } catch (error) {
-    console.error('Create opportunity error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Create opportunity error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -75,21 +90,25 @@ exports.getOpportunities = async (req, res) => {
     const { type, status } = req.query;
     const filter = {};
 
-    if (isStaff(req.user.role) && req.query.all === 'true') {
-      if (status && status !== 'all') {
+    if (isStaff(req.user.role) && req.query.all === "true") {
+      if (status && status !== "all") {
         filter.status = status;
       }
     } else {
-      filter.status = 'approved';
+      filter.status = "approved";
       filter.isActive = true;
     }
 
-    if (type && type !== 'all') {
+    // Handle special "designated" filter
+    if (type === "designated") {
+      filter.type = { $in: ["grant", "credit_guarantee"] };
+      filter.eligibleDesignatedOnly = true;
+    } else if (type && type !== "all") {
       filter.type = type;
     }
 
     const opportunities = await Opportunity.find(filter)
-      .populate('createdBy', 'fullName email role organization')
+      .populate("createdBy", "fullName email role organization")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -98,37 +117,37 @@ exports.getOpportunities = async (req, res) => {
       data: opportunities,
     });
   } catch (error) {
-    console.error('Get opportunities error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Get opportunities error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 exports.getOpportunity = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id).populate(
-      'createdBy',
-      'fullName email role organization'
+      "createdBy",
+      "fullName email role organization",
     );
 
     if (!opportunity) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
     const staff = isStaff(req.user.role);
     const isOwner =
       opportunity.createdBy?._id?.toString() === req.user._id.toString();
 
-    if (opportunity.status !== 'approved' && !staff && !isOwner) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+    if (opportunity.status !== "approved" && !staff && !isOwner) {
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
     if (!opportunity.isActive && !staff) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
     res.status(200).json({ success: true, data: opportunity });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -136,22 +155,22 @@ exports.approveOpportunity = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id);
     if (!opportunity) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
-    opportunity.status = 'approved';
+    opportunity.status = "approved";
     opportunity.rejectionReason = undefined;
     opportunity.isActive = true;
     await opportunity.save();
 
     res.status(200).json({
       success: true,
-      message: 'Opportunity approved and published for all logged-in users',
+      message: "Opportunity approved and published for all logged-in users",
       data: opportunity,
     });
   } catch (error) {
-    console.error('Approve opportunity error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Approve opportunity error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -159,25 +178,25 @@ exports.rejectOpportunity = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id);
     if (!opportunity) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
     const reason =
-      (req.body.reason || '').trim() || 'Did not meet platform guidelines';
+      (req.body.reason || "").trim() || "Did not meet platform guidelines";
 
-    opportunity.status = 'rejected';
+    opportunity.status = "rejected";
     opportunity.rejectionReason = reason;
     opportunity.isActive = false;
     await opportunity.save();
 
     res.status(200).json({
       success: true,
-      message: 'Opportunity rejected',
+      message: "Opportunity rejected",
       data: opportunity,
     });
   } catch (error) {
-    console.error('Reject opportunity error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Reject opportunity error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -185,11 +204,23 @@ exports.updateOpportunity = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id);
     if (!opportunity) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
-    const { title, description, type, deadline, link, location, isActive, status } =
-      req.body;
+    const {
+      title,
+      description,
+      type,
+      deadline,
+      link,
+      location,
+      isActive,
+      status,
+      eligibleDesignatedOnly,
+      fundingAmount,
+      currency,
+      programDetails,
+    } = req.body;
 
     if (title !== undefined) opportunity.title = title.trim();
     if (description !== undefined) opportunity.description = description.trim();
@@ -200,21 +231,28 @@ exports.updateOpportunity = async (req, res) => {
     if (isActive !== undefined) opportunity.isActive = isActive;
     if (
       status !== undefined &&
-      ['pending', 'approved', 'rejected'].includes(status)
+      ["pending", "approved", "rejected"].includes(status)
     ) {
       opportunity.status = status;
     }
+    if (eligibleDesignatedOnly !== undefined)
+      opportunity.eligibleDesignatedOnly = eligibleDesignatedOnly;
+    if (fundingAmount !== undefined)
+      opportunity.fundingAmount = fundingAmount ? Number(fundingAmount) : null;
+    if (currency !== undefined) opportunity.currency = currency;
+    if (programDetails !== undefined)
+      opportunity.programDetails = programDetails.trim();
 
     await opportunity.save();
 
     res.status(200).json({
       success: true,
-      message: 'Opportunity updated',
+      message: "Opportunity updated",
       data: opportunity,
     });
   } catch (error) {
-    console.error('Update opportunity error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Update opportunity error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -222,24 +260,26 @@ exports.deleteOpportunity = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id);
     if (!opportunity) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.status(404).json({ success: false, message: "Not found" });
     }
 
     await opportunity.deleteOne();
 
     res.status(200).json({
       success: true,
-      message: 'Opportunity deleted',
+      message: "Opportunity deleted",
     });
   } catch (error) {
-    console.error('Delete opportunity error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Delete opportunity error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 exports.getMyOpportunities = async (req, res) => {
   try {
-    const opportunities = await Opportunity.find({ createdBy: req.user._id }).sort({
+    const opportunities = await Opportunity.find({
+      createdBy: req.user._id,
+    }).sort({
       createdAt: -1,
     });
 
@@ -249,7 +289,7 @@ exports.getMyOpportunities = async (req, res) => {
       data: opportunities,
     });
   } catch (error) {
-    console.error('Get my opportunities error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Get my opportunities error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

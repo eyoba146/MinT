@@ -1,29 +1,48 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const opportunitySchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: [true, 'Title is required'],
+      required: [true, "Title is required"],
       trim: true,
     },
     description: {
       type: String,
-      required: [true, 'Description is required'],
+      required: [true, "Description is required"],
       trim: true,
     },
     type: {
       type: String,
       enum: [
-        'scholarship',
-        'internship',
-        'job',
-        'training',
-        'competition',
-        'announcement',
-        'other',
+        "scholarship",
+        "internship",
+        "job",
+        "training",
+        "competition",
+        "announcement",
+        "grant",
+        "credit_guarantee",
+        "other",
       ],
-      default: 'announcement',
+      default: "announcement",
+    },
+    eligibleDesignatedOnly: {
+      type: Boolean,
+      default: false,
+    },
+    fundingAmount: {
+      type: Number,
+      default: null,
+    },
+    currency: {
+      type: String,
+      default: "ETB",
+    },
+    programDetails: {
+      type: String,
+      trim: true,
+      default: "",
     },
     deadline: {
       type: Date,
@@ -41,8 +60,8 @@ const opportunitySchema = new mongoose.Schema(
     // rejected = hidden
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
-      default: 'pending',
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
     },
     isActive: {
       type: Boolean,
@@ -54,11 +73,11 @@ const opportunitySchema = new mongoose.Schema(
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-module.exports = mongoose.model('Opportunity', opportunitySchema);
+module.exports = mongoose.model("Opportunity", opportunitySchema);
