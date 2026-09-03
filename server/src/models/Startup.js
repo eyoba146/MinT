@@ -96,6 +96,12 @@ const investorConnectionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    transferRequestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    transferRequestedAt: { type: Date, default: null },
   },
   { _id: true },
 );

@@ -164,6 +164,7 @@ export default function InvestorDashboard() {
     currency: "ETB",
     notes: "",
   });
+  const [transferLoading, setTransferLoading] = useState(null);
   const [messagesByConnection, setMessagesByConnection] = useState({});
   const [messageInputs, setMessageInputs] = useState({});
   const [messageLoading, setMessageLoading] = useState(null);
@@ -274,7 +275,7 @@ export default function InvestorDashboard() {
   };
   const handleGenerateDocument = async (connectionId, documentType) => {
     try {
-      await apiRequest(
+      const res = await apiRequest(
         `/startups/connections/${connectionId}/generate-document`,
         {
           method: "POST",
@@ -282,29 +283,39 @@ export default function InvestorDashboard() {
         },
       );
       toast("Document generated successfully", "success");
+      if (res.data?.cloudinaryUrl) {
+        window.open(res.data.cloudinaryUrl, "_blank");
+      }
       const connRes = await apiRequest("/startups/investor/connections");
       setConnections(connRes.data || []);
     } catch (err) {
       toast(err.message || "Failed to generate document", "error");
     }
   };
-  const handleVerifyTransfer = async (connectionId, verified) => {
+  const handleTransferAction = async (connectionId, action) => {
+    setTransferLoading(connectionId);
     try {
       await apiRequest(
         `/startups/connections/${connectionId}/verify-transfer`,
         {
           method: "POST",
-          body: { verified },
+          body: { action },
         },
       );
       toast(
-        verified ? "Transfer verified" : "Transfer verification removed",
+        action === "request"
+          ? "Transfer verification requested"
+          : action === "approve"
+            ? "Transfer approved"
+            : "Transfer declined",
         "success",
       );
       const connRes = await apiRequest("/startups/investor/connections");
       setConnections(connRes.data || []);
     } catch (err) {
-      toast(err.message || "Failed to verify transfer", "error");
+      toast(err.message || "Action failed", "error");
+    } finally {
+      setTransferLoading(null);
     }
   };
   const toggleMessages = async (connectionId) => {
@@ -686,22 +697,63 @@ export default function InvestorDashboard() {
                               "guarantee_issued",
                               "closed",
                             ].includes(conn.status) && (
-                              <div className="mt-3 flex items-center gap-2">
-                                {!conn.transferVerified ? (
-                                  <button
-                                    onClick={() =>
-                                      handleVerifyTransfer(conn._id, true)
-                                    }
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg"
-                                  >
-                                    <CheckCircle className="w-3 h-3" /> Verify
-                                    Transfer
-                                  </button>
-                                ) : (
+                              <div className="mt-3 space-y-2">
+                                {conn.transferVerified ? (
                                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg">
                                     <CheckCircle className="w-3 h-3" /> Transfer
                                     Verified
                                   </span>
+                                ) : conn.transferRequestedBy ? (
+                                  <div className="space-y-1">
+                                    {conn.transferRequestedBy === user?._id ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg">
+                                        <Clock className="w-3 h-3" /> Pending
+                                        other party approval
+                                      </span>
+                                    ) : (
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() =>
+                                            handleTransferAction(
+                                              conn._id,
+                                              "approve",
+                                            )
+                                          }
+                                          disabled={
+                                            transferLoading === conn._id
+                                          }
+                                          className="px-2 py-1 text-[10px] font-bold text-white bg-emerald-600 rounded-lg"
+                                        >
+                                          Approve Transfer
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleTransferAction(
+                                              conn._id,
+                                              "decline",
+                                            )
+                                          }
+                                          disabled={
+                                            transferLoading === conn._id
+                                          }
+                                          className="px-2 py-1 text-[10px] font-bold text-slate-700 bg-slate-100 rounded-lg"
+                                        >
+                                          Decline
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      handleTransferAction(conn._id, "request")
+                                    }
+                                    disabled={transferLoading === conn._id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-60"
+                                  >
+                                    <CheckCircle className="w-3 h-3" />
+                                    Verify Transfer
+                                  </button>
                                 )}
                               </div>
                             )}

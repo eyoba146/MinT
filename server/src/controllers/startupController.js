@@ -2557,8 +2557,13 @@ exports.getConnectionMessages = async (req, res) => {
 exports.verifyTransfer = async (req, res) => {
   try {
     const { connectionId } = req.params;
-    const { verified } = req.body; // true/false
-    const evidenceFile = req.file; // optional upload
+    const { action } = req.body;
+
+    if (!["request", "approve", "decline", "reset"].includes(action)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid action" });
+    }
 
     const startup = await Startup.findOne({
       "investorConnections._id": connectionId,
@@ -2599,29 +2604,75 @@ exports.verifyTransfer = async (req, res) => {
       });
     }
 
-    if (verified) {
-      connection.transferVerified = true;
-    } else {
+    if (action === "reset") {
       connection.transferVerified = false;
-      connection.transferEvidenceUrl = null;
+      connection.transferRequestedBy = null;
+      connection.transferRequestedAt = null;
+      connection.lastActivityAt = new Date();
+      await startup.save();
+      return res.status(200).json({
+        success: true,
+        message: "Transfer verification reset",
+        data: connection,
+      });
     }
 
-    if (evidenceFile) {
-      const uploadResult = await streamUpload(
-        evidenceFile.buffer,
-        "mints/startups/transfer-evidence",
-      );
-      connection.transferEvidenceUrl = uploadResult.secure_url;
+    if (action === "request") {
+      if (connection.transferVerified) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Transfer already verified" });
+      }
+      if (connection.transferRequestedBy) {
+        return res.status(400).json({
+          success: false,
+          message: "Transfer request already pending",
+        });
+      }
+      connection.transferRequestedBy = req.user._id;
+      connection.transferRequestedAt = new Date();
+      connection.lastActivityAt = new Date();
+      await startup.save();
+      return res.status(200).json({
+        success: true,
+        message: "Transfer verification requested",
+        data: connection,
+      });
     }
 
-    connection.lastActivityAt = new Date();
-    await startup.save();
+    if (action === "approve" || action === "decline") {
+      const requesterId = connection.transferRequestedBy?.toString();
+      if (!requesterId) {
+        return res
+          .status(400)
+          .json({ success: false, message: "No pending transfer request" });
+      }
+      if (requesterId === req.user._id.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: "You cannot approve your own request",
+        });
+      }
 
-    res.status(200).json({
-      success: true,
-      message: "Transfer verification updated",
-      data: connection,
-    });
+      if (action === "approve") {
+        connection.transferVerified = true;
+        connection.transferRequestedBy = null;
+        connection.transferRequestedAt = null;
+      } else {
+        connection.transferRequestedBy = null;
+        connection.transferRequestedAt = null;
+      }
+      connection.lastActivityAt = new Date();
+      await startup.save();
+      return res.status(200).json({
+        success: true,
+        message:
+          action === "approve"
+            ? "Transfer verified"
+            : "Transfer verification declined",
+        data: connection,
+      });
+    }
   } catch (error) {
     console.error("Verify transfer error:", error);
     res.status(500).json({ success: false, message: "Server error" });
