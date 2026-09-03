@@ -348,21 +348,19 @@ export default function InvestorDashboard() {
       return;
     }
     setShowMessages(connectionId);
-    if (!messagesByConnection[connectionId]) {
-      setMessageLoading(connectionId);
-      try {
-        const res = await apiRequest(
-          `/startups/connections/${connectionId}/messages`,
-        );
-        setMessagesByConnection((prev) => ({
-          ...prev,
-          [connectionId]: res.data || [],
-        }));
-      } catch (err) {
-        toast(err.message || "Failed to load messages", "error");
-      } finally {
-        setMessageLoading(null);
-      }
+    setMessageLoading(connectionId);
+    try {
+      const res = await apiRequest(
+        `/startups/connections/${connectionId}/messages`,
+      );
+      setMessagesByConnection((prev) => ({
+        ...prev,
+        [connectionId]: res.data || [],
+      }));
+    } catch (err) {
+      toast(err.message || "Failed to load messages", "error");
+    } finally {
+      setMessageLoading(null);
     }
   };
 
@@ -1385,9 +1383,9 @@ export default function InvestorDashboard() {
       )}
       {/* Full-screen Chat Modal */}
       {showMessages && (
-        <div className="fixed top-0 right-0 bottom-0 left-72 z-50 flex flex-col bg-white">
+        <div className="fixed inset-0 lg:left-72 z-50 flex flex-col bg-white">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200">
             <div>
               <h3 className="text-base font-extrabold text-slate-900">
                 Messages
@@ -1407,7 +1405,7 @@ export default function InvestorDashboard() {
           </div>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-slate-50">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 bg-slate-50">
             {messageLoading === showMessages ? (
               <Loader2 className="w-6 h-6 animate-spin mx-auto mt-10" />
             ) : (messagesByConnection[showMessages] || []).length === 0 ? (
@@ -1454,8 +1452,8 @@ export default function InvestorDashboard() {
                       <div
                         className={`inline-block max-w-full px-4 py-2.5 rounded-2xl ${
                           isOwn
-                            ? "bg-white border border-teal-100 text-slate-800"
-                            : "bg-slate-100/80 text-slate-700"
+                            ? "bg-white border border-teal-100 text-slate-800 break-words"
+                            : "bg-slate-100/80 text-slate-700 break-words"
                         }`}
                       >
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -1471,7 +1469,7 @@ export default function InvestorDashboard() {
 
           {/* Input */}
           <div className="border-t border-slate-200 p-4 bg-white">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <input
                 type="text"
                 value={messageInputs[showMessages] || ""}
@@ -1488,12 +1486,12 @@ export default function InvestorDashboard() {
                   }
                 }}
                 placeholder="Type your message... (Enter to send)"
-                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
               <button
                 onClick={() => handleSendMessage(showMessages)}
                 disabled={messageLoading === showMessages}
-                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold disabled:opacity-60"
+                className="shrink-0 px-3 sm:px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold disabled:opacity-60"
               >
                 Send
               </button>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 import AppShell from "../../components/AppShell";
-import { Loader2, Globe, MapPin, ExternalLink } from "lucide-react";
+import { Loader2, Globe, MapPin, ExternalLink, Building2 } from "lucide-react";
 
 export default function BuildersDirectory({ embedded = false }) {
   const { isAuthenticated, user } = useAuth();
@@ -52,7 +52,7 @@ export default function BuildersDirectory({ embedded = false }) {
             >
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center text-2xl shrink-0">
-                  {b.logo || "🏢"}
+                  <Building2 className="w-6 h-6 text-teal-700" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="font-semibold text-slate-900 truncate">

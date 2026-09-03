@@ -8,8 +8,12 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
           <div className="space-y-4 md:col-span-1">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-800 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-teal-900/40">
-                MinT
+              <div className="w-14 h-11 rounded-2xl overflow-hidden flex items-center justify-center shrink-0">
+                <img
+                  src="/logo.png"
+                  alt="MinT Digital Hub logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div>
                 <div className="text-sm font-extrabold text-white">

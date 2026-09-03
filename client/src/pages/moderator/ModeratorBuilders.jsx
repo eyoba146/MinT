@@ -4,7 +4,7 @@ import { useToast } from "../../context/ToastContext";
 import { apiRequest } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import StatusBadge from "../../components/StatusBadge";
-import { Loader2, Search, Network } from "lucide-react";
+import { Loader2, Search, Network, Building2 } from "lucide-react";
 
 const TABS = [
   { key: "all", label: "All" },
@@ -132,7 +132,7 @@ export default function ModeratorBuilders() {
                     <td className="px-4 sm:px-6 py-4">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center text-base">
-                          {b.logo || "🏢"}
+                          <Building2 className="w-4 h-4 text-teal-700" />
                         </div>
                         <span className="font-semibold text-slate-900">
                           {b.organizationName}

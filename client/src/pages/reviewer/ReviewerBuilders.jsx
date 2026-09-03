@@ -102,7 +102,7 @@ export default function ReviewerBuilders() {
             >
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="text-lg">{b.logo || "🏢"}</span>
+                  <Building2 className="w-5 h-5 text-teal-700 shrink-0" />
                   <h3 className="font-semibold text-slate-900 text-sm">
                     {b.organizationName}
                   </h3>

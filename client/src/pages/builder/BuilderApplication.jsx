@@ -4,7 +4,21 @@ import { apiRequest } from "../../utils/api";
 import { useToast } from "../../context/ToastContext";
 import AppShell from "../../components/AppShell";
 import { COUNTRIES } from "../../data/constants";
-import { Loader2, Save, ChevronDown } from "lucide-react";
+import {
+  Loader2,
+  Save,
+  ChevronDown,
+  Building2,
+  Landmark,
+  Rocket,
+  Lightbulb,
+  Globe2,
+  GraduationCap,
+  Microscope,
+  Handshake,
+  BriefcaseBusiness,
+  Factory,
+} from "lucide-react";
 
 const TYPES = [
   { value: "incubator", label: "Incubator" },
@@ -17,11 +31,25 @@ const TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const LOGO_EMOJIS = ["🏢", "🏛️", "🚀", "💡", "🌐", "🎓", "🔬", "🤝", "💼", "🏭"];
+const LOGO_OPTIONS = [
+  { value: "building", Icon: Building2, label: "Building" },
+  { value: "landmark", Icon: Landmark, label: "Institution" },
+  { value: "rocket", Icon: Rocket, label: "Startup" },
+  { value: "lightbulb", Icon: Lightbulb, label: "Innovation" },
+  { value: "globe", Icon: Globe2, label: "Global" },
+  { value: "education", Icon: GraduationCap, label: "Education" },
+  { value: "research", Icon: Microscope, label: "Research" },
+  { value: "partnership", Icon: Handshake, label: "Partnership" },
+  { value: "business", Icon: BriefcaseBusiness, label: "Business" },
+  { value: "factory", Icon: Factory, label: "Industry" },
+];
+
+const getLogoOption = (value) =>
+  LOGO_OPTIONS.find((option) => option.value === value) || LOGO_OPTIONS[0];
 
 const empty = {
   organizationName: "",
-  logo: "🏢",
+  logo: "building",
   builderType: "incubator",
   description: "",
   country: "Ethiopia",
@@ -55,7 +83,7 @@ export default function BuilderApplication() {
         const b = res.data;
         setForm({
           organizationName: b.organizationName || "",
-          logo: b.logo || "🏢",
+          logo: b.logo || "building",
           builderType: b.builderType || "incubator",
           description: b.description || "",
           country: b.country || "Ethiopia",
@@ -156,24 +184,29 @@ export default function BuilderApplication() {
               className="w-full h-[42px] flex items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-2xl"
               title="Click to choose logo"
             >
-              <span>{form.logo || "🏢"}</span>
+              {(() => {
+                const { Icon } = getLogoOption(form.logo);
+                return <Icon className="w-5 h-5 text-teal-700" />;
+              })()}
               <ChevronDown size={14} className="text-slate-400" />
             </button>
             {logoOpen && (
               <div className="absolute z-20 mt-1 left-0 right-0 sm:min-w-[200px] p-2 rounded-xl border border-slate-200 bg-white shadow-lg grid grid-cols-5 gap-1">
-                {LOGO_EMOJIS.map((em) => (
+                {LOGO_OPTIONS.map(({ value, Icon, label }) => (
                   <button
-                    key={em}
+                    key={value}
                     type="button"
                     onClick={() => {
-                      setForm({ ...form, logo: em });
+                      setForm({ ...form, logo: value });
                       setLogoOpen(false);
                     }}
-                    className={`h-10 text-xl rounded-lg hover:bg-teal-50 ${
-                      form.logo === em ? "bg-teal-50 ring-1 ring-teal-400" : ""
+                    className={`h-10 rounded-lg hover:bg-teal-50 flex items-center justify-center ${
+                      form.logo === value ? "bg-teal-50 ring-1 ring-teal-400" : ""
                     }`}
+                    title={label}
+                    aria-label={label}
                   >
-                    {em}
+                    <Icon className="w-5 h-5 text-teal-700" />
                   </button>
                 ))}
               </div>
