@@ -15,6 +15,9 @@ import {
   ExternalLink,
   ClipboardList,
   HelpCircle,
+  FileCheck,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 const TABS = [
@@ -36,6 +39,10 @@ export default function ReviewerDashboard() {
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("queue");
+  const [annualReports, setAnnualReports] = useState([]);
+  const [annualLoading, setAnnualLoading] = useState(true);
+  const [reportNotes, setReportNotes] = useState({});
+  const [reviewingReport, setReviewingReport] = useState(null);
 
   const fetchStats = async () => {
     try {
@@ -62,10 +69,46 @@ export default function ReviewerDashboard() {
     }
   };
 
+  const fetchAnnualReports = async () => {
+    setAnnualLoading(true);
+    try {
+      const res = await apiRequest("/startups/annual-reports?status=pending");
+      setAnnualReports(res.data || []);
+    } catch (err) {
+      toast(err.message || "Failed to load annual reports", "error");
+    } finally {
+      setAnnualLoading(false);
+    }
+  };
+
+  const handleAnnualReportReview = async (report, status) => {
+    setReviewingReport(report._id);
+    try {
+      await apiRequest(
+        `/startups/${report.startupId}/annual-reports/${report._id}`,
+        {
+          method: "PATCH",
+          body: { status, notes: reportNotes[report._id] || "" },
+        },
+      );
+      toast(`Annual report marked ${status}`, "success");
+      setAnnualReports((prev) => prev.filter((item) => item._id !== report._id));
+      setReportNotes((prev) => ({ ...prev, [report._id]: "" }));
+    } catch (err) {
+      toast(err.message || "Failed to review annual report", "error");
+    } finally {
+      setReviewingReport(null);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchStartups("queue", "")]);
+      await Promise.all([
+        fetchStats(),
+        fetchStartups("queue", ""),
+        fetchAnnualReports(),
+      ]);
       setLoading(false);
     };
     init();
@@ -134,6 +177,91 @@ export default function ReviewerDashboard() {
           color="teal"
         />
       </div>
+
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-blue-600" /> Annual report compliance
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Review reports submitted by designated founders.
+            </p>
+          </div>
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+            {annualReports.length} pending
+          </span>
+        </div>
+
+        {annualLoading ? (
+          <div className="py-10 flex justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+          </div>
+        ) : annualReports.length === 0 ? (
+          <div className="py-10 text-center text-sm text-slate-500">
+            No annual reports awaiting review.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {annualReports.map((report) => (
+              <div key={report._id} className="px-4 sm:px-6 py-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-slate-900">
+                      {report.companyName} · FY {report.year}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      {report.founder?.fullName || "Founder"} · submitted{" "}
+                      {report.submittedAt
+                        ? new Date(report.submittedAt).toLocaleDateString()
+                        : "—"}
+                    </div>
+                  </div>
+                  {report.reportUrl && (
+                    <a
+                      href={report.reportUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 shrink-0"
+                    >
+                      <ExternalLink size={12} /> Open report
+                    </a>
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    value={reportNotes[report._id] || ""}
+                    onChange={(e) =>
+                      setReportNotes((prev) => ({
+                        ...prev,
+                        [report._id]: e.target.value,
+                      }))
+                    }
+                    placeholder="Review note (optional)"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAnnualReportReview(report, "flagged")}
+                    disabled={reviewingReport === report._id}
+                    className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs font-bold hover:bg-red-100 disabled:opacity-60"
+                  >
+                    <XCircle size={13} /> Flag
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAnnualReportReview(report, "reviewed")}
+                    disabled={reviewingReport === report._id}
+                    className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    <CheckCircle2 size={13} /> Approve
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-4 sm:px-6 pt-3 border-b border-slate-100 flex flex-wrap gap-1">

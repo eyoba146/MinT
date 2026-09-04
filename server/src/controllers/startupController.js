@@ -1709,6 +1709,227 @@ exports.exportConnectionReport = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+// ====================== ADMIN: EXPORT PLATFORM REPORT ======================
+exports.exportPlatformReport = async (req, res) => {
+  try {
+    const { format = "csv" } = req.query;
+    const User = require("../models/User");
+    const Opportunity = require("../models/Opportunity");
+    const EcosystemBuilder = require("../models/EcosystemBuilder");
+
+    const [users, startups, opportunities, builders] = await Promise.all([
+      User.find({}, "fullName email role organization organizationName companyName builderType investmentRange focus createdAt")
+        .sort({ createdAt: 1 })
+        .lean(),
+      Startup.find({}, "companyName sector country status complianceStatus founder createdAt designatedAt annualReports investorConnections")
+        .populate("founder", "fullName email")
+        .populate("annualReports.reviewedBy", "fullName email role")
+        .populate("investorConnections.investor", "fullName email organization")
+        .sort({ createdAt: 1 })
+        .lean(),
+      Opportunity.find({}, "title description type status isActive eligibleDesignatedOnly fundingAmount currency deadline location createdBy createdAt")
+        .populate("createdBy", "fullName email role")
+        .sort({ createdAt: 1 })
+        .lean(),
+      EcosystemBuilder.find({}, "organizationName builderType country location website status ownerUser submittedAt designatedAt designationExpiresAt certificateNumber reviewedBy createdAt")
+        .populate("ownerUser", "fullName email")
+        .populate("reviewedBy", "fullName email role")
+        .sort({ createdAt: 1 })
+        .lean(),
+    ]);
+
+    const date = (value) => (value ? new Date(value).toISOString() : "");
+    const userRows = users.map((user) => ({
+      userId: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      organization: user.organization || user.organizationName || user.companyName || "",
+      builderType: user.builderType || "",
+      investmentRange: user.investmentRange || "",
+      joinedAt: date(user.createdAt),
+    }));
+    const startupRows = startups.map((startup) => ({
+      startupId: startup._id,
+      companyName: startup.companyName,
+      founderName: startup.founder?.fullName || "",
+      founderEmail: startup.founder?.email || "",
+      sector: startup.sector || "",
+      country: startup.country || "",
+      status: startup.status,
+      complianceStatus: startup.complianceStatus || "",
+      createdAt: date(startup.createdAt),
+      designatedAt: date(startup.designatedAt),
+    }));
+    const opportunityRows = opportunities.map((opportunity) => ({
+      opportunityId: opportunity._id,
+      title: opportunity.title,
+      type: opportunity.type,
+      status: opportunity.status,
+      isActive: opportunity.isActive,
+      eligibleDesignatedOnly: opportunity.eligibleDesignatedOnly,
+      fundingAmount: opportunity.fundingAmount,
+      currency: opportunity.currency,
+      deadline: date(opportunity.deadline),
+      location: opportunity.location || "",
+      postedBy: opportunity.createdBy?.fullName || "",
+      postedByEmail: opportunity.createdBy?.email || "",
+      postedByRole: opportunity.createdBy?.role || "",
+      createdAt: date(opportunity.createdAt),
+    }));
+    const builderRows = builders.map((builder) => ({
+      builderId: builder._id,
+      organizationName: builder.organizationName,
+      builderType: builder.builderType,
+      country: builder.country,
+      location: builder.location || "",
+      website: builder.website || "",
+      status: builder.status,
+      ownerName: builder.ownerUser?.fullName || "",
+      ownerEmail: builder.ownerUser?.email || "",
+      submittedAt: date(builder.submittedAt),
+      designatedAt: date(builder.designatedAt),
+      designationExpiresAt: date(builder.designationExpiresAt),
+      certificateNumber: builder.certificateNumber || "",
+      reviewedBy: builder.reviewedBy?.fullName || "",
+      createdAt: date(builder.createdAt),
+    }));
+    const annualReportRows = startups.flatMap((startup) =>
+      (startup.annualReports || []).map((report) => ({
+        reportId: report._id,
+        startupName: startup.companyName,
+        founderName: startup.founder?.fullName || "",
+        founderEmail: startup.founder?.email || "",
+        year: report.year,
+        status: report.status,
+        reportUrl: report.reportUrl || "",
+        submittedAt: date(report.submittedAt),
+        reviewedBy: report.reviewedBy?.fullName || "",
+        reviewNotes: report.notes || "",
+      })),
+    );
+    const connectionRows = startups.flatMap((startup) =>
+      (startup.investorConnections || []).map((connection) => ({
+        connectionId: connection._id,
+        startupName: startup.companyName,
+        founderName: startup.founder?.fullName || "",
+        founderEmail: startup.founder?.email || "",
+        investorName: connection.investor?.fullName || "",
+        investorEmail: connection.investor?.email || "",
+        investorOrganization: connection.investor?.organization || "",
+        status: connection.status,
+        investmentType: connection.investmentType || "",
+        amount: connection.amount,
+        currency: connection.currency || "",
+        dataRoomApproved: connection.dataRoomApproved,
+        termSheetApproved: connection.termSheetApproved,
+        dealExecutionApproved: connection.dealExecutionApproved,
+        connectedAt: date(connection.connectedAt),
+        lastActivityAt: date(connection.lastActivityAt),
+        declineReason: connection.declineReason || "",
+      })),
+    );
+
+    const summaryRows = [
+      { metric: "Report title", value: "MinT Digital Innovation Hub — Platform Operations Report" },
+      { metric: "Generated at", value: new Date().toISOString() },
+      { metric: "Total users", value: userRows.length },
+      { metric: "Founders", value: userRows.filter((row) => row.role === "founder").length },
+      { metric: "Investors", value: userRows.filter((row) => row.role === "investor").length },
+      { metric: "Citizens", value: userRows.filter((row) => row.role === "citizen").length },
+      { metric: "Reviewers", value: userRows.filter((row) => row.role === "reviewer").length },
+      { metric: "Moderators", value: userRows.filter((row) => row.role === "moderator").length },
+      { metric: "Administrators", value: userRows.filter((row) => row.role === "admin").length },
+      { metric: "Ecosystem builder accounts", value: userRows.filter((row) => row.role === "ecosystem_builder").length },
+      { metric: "Registered startups", value: startupRows.length },
+      { metric: "Designated startups", value: startupRows.filter((row) => row.status === "designated").length },
+      { metric: "Posted opportunities", value: opportunityRows.length },
+      { metric: "Approved opportunities", value: opportunityRows.filter((row) => row.status === "approved").length },
+      { metric: "Pending opportunities", value: opportunityRows.filter((row) => row.status === "pending").length },
+      { metric: "Ecosystem builders", value: builderRows.length },
+      { metric: "Designated ecosystem builders", value: builderRows.filter((row) => row.status === "designated").length },
+      { metric: "Annual reports", value: annualReportRows.length },
+      { metric: "Pending annual reports", value: annualReportRows.filter((row) => row.status === "pending").length },
+      { metric: "Investor connections", value: connectionRows.length },
+    ];
+
+    const worksheets = [
+      ["Summary", summaryRows],
+      ["User Register", userRows],
+      ["Startup Register", startupRows],
+      ["Opportunity Register", opportunityRows],
+      ["Builder Register", builderRows],
+      ["Annual Reports", annualReportRows],
+      ["Connection Register", connectionRows],
+    ];
+
+    if (format === "csv") {
+      const rows = worksheets.flatMap(([section, values]) =>
+        values.map((value) => ({ section, ...value })),
+      );
+      const { Parser } = require("json2csv");
+      const fields = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+      const csv = new Parser({ fields }).parse(rows);
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename=platform-report-${Date.now()}.csv`);
+      return res.send(csv);
+    }
+
+    if (format === "xlsx") {
+      const ExcelJS = require("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      worksheets.forEach(([title, values]) => {
+        const worksheet = workbook.addWorksheet(title.slice(0, 31));
+        const columns = values.length > 0 ? Object.keys(values[0]) : ["value"];
+        worksheet.columns = columns.map((key) => ({
+          header: key.replace(/([A-Z])/g, " $1").replace(/^./, (value) => value.toUpperCase()),
+          key,
+          width: Math.min(36, Math.max(14, key.length + 4)),
+        }));
+        values.forEach((value) => worksheet.addRow(value));
+        worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        worksheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } };
+        worksheet.views = [{ state: "frozen", ySplit: 1 }];
+        worksheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + Math.min(columns.length, 26))}1` };
+      });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename=platform-report-${Date.now()}.xlsx`);
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    if (format === "pdf") {
+      const doc = new PDFDocument({ margin: 40, size: "A4" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=platform-report-${Date.now()}.pdf`);
+      doc.pipe(res);
+      doc.fontSize(18).text("MinT Digital Innovation Hub", { align: "center" });
+      doc.fontSize(14).text("Platform Operations Report", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`);
+      worksheets.forEach(([title, values]) => {
+        doc.moveDown();
+        doc.fontSize(12).text(title);
+        values.slice(0, title === "Summary" ? values.length : 30).forEach((row) => {
+          const fields = Object.entries(row)
+            .filter(([, value]) => value !== "" && value != null)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(" | ");
+          doc.fontSize(8).text(fields, { width: 515 });
+          if (doc.y > 740) doc.addPage();
+        });
+      });
+      doc.end();
+      return;
+    }
+
+    return res.status(400).json({ success: false, message: "Invalid format. Use csv, xlsx, or pdf" });
+  } catch (error) {
+    console.error("Platform report error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 // ====================== ADMIN / REVIEWER / MODERATOR: LIST ======================
 exports.getAdminStartups = async (req, res) => {
   try {
@@ -2972,6 +3193,89 @@ exports.submitAnnualReport = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: error.message || "Server error" });
+  }
+};
+
+// ====================== REVIEWER / ADMIN: ANNUAL REPORTS ======================
+exports.getAnnualReports = async (req, res) => {
+  try {
+    const status = req.query.status || "pending";
+    const allowedStatuses = ["pending", "reviewed", "flagged", "all"];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid report status" });
+    }
+
+    const startups = await Startup.find({
+      annualReports: status === "all"
+        ? { $exists: true, $not: { $size: 0 } }
+        : { $elemMatch: { status } },
+    })
+      .populate("founder", "fullName email")
+      .select("companyName founder annualReports")
+      .sort({ "annualReports.submittedAt": -1 });
+
+    const reports = startups.flatMap((startup) =>
+      startup.annualReports
+        .filter((report) => status === "all" || report.status === status)
+        .map((report) => ({
+          ...report.toObject(),
+          startupId: startup._id,
+          companyName: startup.companyName,
+          founder: startup.founder,
+        })),
+    );
+
+    res.status(200).json({ success: true, data: reports });
+  } catch (error) {
+    console.error("Get annual reports error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.reviewAnnualReport = async (req, res) => {
+  try {
+    const { status, notes = "" } = req.body;
+    if (!["reviewed", "flagged"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Status must be reviewed or flagged",
+      });
+    }
+
+    const startup = await Startup.findById(req.params.id);
+    if (!startup) {
+      return res.status(404).json({ success: false, message: "Startup not found" });
+    }
+
+    const report = startup.annualReports.id(req.params.reportId);
+    if (!report) {
+      return res.status(404).json({ success: false, message: "Annual report not found" });
+    }
+
+    report.status = status;
+    report.reviewedBy = req.user._id;
+    report.notes = String(notes).trim();
+    startup.complianceStatus = status === "reviewed" ? "compliant" : "report_pending";
+    await startup.save();
+
+    await CaseDecision.create({
+      entityType: "startup",
+      entityId: startup._id,
+      action: "annual_report_review",
+      reason: `Annual report for FY ${report.year} marked ${status}`,
+      notes: report.notes,
+      actor: req.user._id,
+      meta: { reportId: report._id, year: report.year, status },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Annual report marked ${status}`,
+      data: report,
+    });
+  } catch (error) {
+    console.error("Review annual report error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 // ====================== FOUNDER: SUBMIT ANNUAL REPORT ======================

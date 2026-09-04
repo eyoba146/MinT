@@ -20,6 +20,7 @@ const {
   getAdminStats,
   getConnectionReport,
   exportConnectionReport,
+  exportPlatformReport,
   getPublicStats,
   getAdminStartups,
   deleteStartup,
@@ -30,6 +31,8 @@ const {
   updateConnectionStage,
   updateConnectionDetails,
   submitAnnualReport,
+  getAnnualReports,
+  reviewAnnualReport,
   approveDataRoom,
   approveTermSheet,
   approveDealExecution,
@@ -124,6 +127,18 @@ router.post(
 );
 router.post("/my/annual-report", restrictTo("founder"), submitAnnualReport);
 
+// Reviewer / Admin — annual report compliance review
+router.get(
+  "/annual-reports",
+  restrictTo("admin", "reviewer"),
+  getAnnualReports,
+);
+router.patch(
+  "/:id/annual-reports/:reportId",
+  restrictTo("admin", "reviewer"),
+  reviewAnnualReport,
+);
+
 // Admin / Reviewer / Moderator — lists & stats
 router.get("/pending", restrictTo("admin", "reviewer"), getPendingStartups);
 router.get(
@@ -140,6 +155,11 @@ router.get(
   "/admin/export/connection-report",
   restrictTo("admin", "reviewer", "moderator"),
   exportConnectionReport,
+);
+router.get(
+  "/admin/export/platform-report",
+  restrictTo("admin"),
+  exportPlatformReport,
 );
 router.get(
   "/admin",

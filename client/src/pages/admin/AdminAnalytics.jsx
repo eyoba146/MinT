@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { apiRequest } from "../../utils/api";
+import { apiRequest, getApiBase } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import AnalyticsCharts from "../../components/AnalyticsCharts";
 import {
@@ -68,7 +68,7 @@ export default function AdminAnalytics() {
     const token = localStorage.getItem("dih_token");
     if (!token) return;
 
-    const url = `http://localhost:5000/api/startups/admin/export/connection-report?format=${format}`;
+    const url = `${getApiBase()}/startups/admin/export/connection-report?format=${format}`;
     try {
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -79,6 +79,29 @@ export default function AdminAnalytics() {
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.download = `connection-report.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  const downloadPlatformReport = async (format) => {
+    const token = localStorage.getItem("dih_token");
+    if (!token) return;
+
+    const url = `${getApiBase()}/startups/admin/export/platform-report?format=${format}`;
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Download failed");
+
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `platform-report.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -118,6 +141,11 @@ export default function AdminAnalytics() {
   const founders = stats?.totalFounders || 0;
   const builders = stats?.totalBuilders || 0;
   const designatedBuilders = stats?.designatedBuilders || 0;
+  const totalUsers = stats?.totalUsers || 0;
+  const totalOpportunities = (stats?.charts?.opportunityByStatus || []).reduce(
+    (sum, item) => sum + (item.value || 0),
+    0,
+  );
 
   const verificationRate = total > 0 ? Math.round((verified / total) * 100) : 0;
   const slaCompliance =
@@ -349,7 +377,7 @@ export default function AdminAnalytics() {
         </div>
 
         {/* Secondary Stakeholder Metrics Ribbon */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
             <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
               <Briefcase className="w-4 h-4" />
@@ -404,6 +432,57 @@ export default function AdminAnalytics() {
                 Accredited Hubs
               </div>
             </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-base font-black text-slate-900">{totalUsers}</div>
+              <div className="text-[11px] text-slate-500 font-semibold">Total Platform Users</div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 flex items-center gap-3 shadow-2xs">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+              <Briefcase className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-base font-black text-slate-900">{totalOpportunities}</div>
+              <div className="text-[11px] text-slate-500 font-semibold">Posted Opportunities</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-teal-600" /> Platform reports
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Export users, startups, opportunities, builders, annual reports, and connections.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => downloadPlatformReport("csv")}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
+            >
+              <FileText className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button
+              onClick={() => downloadPlatformReport("xlsx")}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+            </button>
+            <button
+              onClick={() => downloadPlatformReport("pdf")}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs font-bold"
+            >
+              <Download className="w-3.5 h-3.5" /> PDF
+            </button>
           </div>
         </div>
 
