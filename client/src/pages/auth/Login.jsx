@@ -182,7 +182,14 @@ export default function Login() {
                 <span>Verify your email</span>
               </Link>
             )}
-
+            <div className="flex justify-end">
+              <Link
+                to="/forgot-password"
+                className="text-sm text-teal-700 font-semibold hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <button
               type="submit"
               disabled={loading}

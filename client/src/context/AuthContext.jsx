@@ -92,6 +92,12 @@ export function AuthProvider({ children }) {
       body: { email },
     });
   };
+  const verifyResetCode = async (email, code) => {
+    return await apiRequest("/auth/verify-reset-code", {
+      method: "POST",
+      body: { email, code },
+    });
+  };
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -112,6 +118,7 @@ export function AuthProvider({ children }) {
         forgotPassword,
         resetPassword,
         resendVerification,
+        verifyResetCode,
         logout,
         isAuthenticated: !!user,
       }}

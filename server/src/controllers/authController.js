@@ -278,7 +278,10 @@ exports.forgotPassword = async (req, res) => {
         .json({ success: false, message: "Email is required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select(
+      "+passwordResetCode +passwordResetExpires +lastPasswordResetSentAt",
+    );
+
     if (!user) {
       // Don't reveal if user exists
       return res.status(200).json({
@@ -287,11 +290,25 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
+    // Rate limit: 60 seconds between requests
+    const now = new Date();
+    const lastSent = user.lastPasswordResetSentAt
+      ? new Date(user.lastPasswordResetSentAt)
+      : null;
+    if (lastSent && now - lastSent < 60 * 1000) {
+      const waitSeconds = Math.ceil((60 * 1000 - (now - lastSent)) / 1000);
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${waitSeconds} seconds before requesting another code`,
+      });
+    }
+
     const code = generateCode();
     const expires = new Date(Date.now() + 15 * 60 * 1000);
 
     user.passwordResetCode = code;
     user.passwordResetExpires = expires;
+    user.lastPasswordResetSentAt = new Date();
     await user.save();
 
     await sendPasswordResetEmail(email, code);
@@ -355,6 +372,43 @@ exports.resetPassword = async (req, res) => {
     });
   } catch (error) {
     console.error("Reset password error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.verifyResetCode = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and code are required" });
+    }
+
+    const user = await User.findOne({ email }).select(
+      "+passwordResetCode +passwordResetExpires",
+    );
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid request" });
+    }
+
+    if (
+      !user.passwordResetCode ||
+      user.passwordResetCode !== code ||
+      new Date() > new Date(user.passwordResetExpires)
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired code" });
+    }
+
+    res.status(200).json({ success: true, message: "Code verified" });
+  } catch (error) {
+    console.error("Verify reset code error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };

@@ -1,3 +1,5 @@
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
@@ -130,6 +132,26 @@ function AppRoutes() {
           <PublicOnlyRoute>
             <PublicLayout>
               <VerifyEmail />
+            </PublicLayout>
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicOnlyRoute>
+            <PublicLayout>
+              <ForgotPassword />
+            </PublicLayout>
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <PublicOnlyRoute>
+            <PublicLayout>
+              <ResetPassword />
             </PublicLayout>
           </PublicOnlyRoute>
         }
