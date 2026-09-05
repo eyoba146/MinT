@@ -1,6 +1,12 @@
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import ResetPassword from "./pages/auth/ResetPassword";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
 import { DesignationProvider } from "./context/DesignationContext";
@@ -35,20 +41,12 @@ import ModeratorStartups from "./pages/moderator/ModeratorStartups";
 import ModeratorBuilders from "./pages/moderator/ModeratorBuilders";
 import BuilderApplication from "./pages/builder/BuilderApplication";
 import BuilderDashboard from "./pages/builder/BuilderDashboard";
-
-function roleHome(role) {
-  if (role === "founder") return "/founder";
-  if (role === "investor") return "/investor";
-  if (role === "admin") return "/admin/analytics";
-  if (role === "reviewer") return "/reviewer";
-  if (role === "moderator") return "/moderator";
-  if (role === "citizen") return "/citizen";
-  if (role === "ecosystem_builder") return "/builder";
-  return "/";
-}
+import VerificationPage from "./pages/VerificationPage";
+import VerificationQueue from "./pages/reviewer/VerificationQueue";
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -64,7 +62,34 @@ function ProtectedRoute({ children, roles }) {
     return <Navigate to={roleHome(user.role)} replace />;
   }
 
+  const needsVerification = [
+    "founder",
+    "investor",
+    "ecosystem_builder",
+  ].includes(user.role);
+  const isVerificationPath = location.pathname === "/verification";
+  const isProfilePath = location.pathname === "/profile";
+  if (
+    needsVerification &&
+    user.verificationStatus !== "approved" &&
+    !isVerificationPath &&
+    !isProfilePath
+  ) {
+    return <Navigate to="/verification" replace />;
+  }
+
   return children;
+}
+
+function roleHome(role) {
+  if (role === "founder") return "/founder";
+  if (role === "investor") return "/investor";
+  if (role === "admin") return "/admin/analytics";
+  if (role === "reviewer") return "/reviewer";
+  if (role === "moderator") return "/moderator";
+  if (role === "citizen") return "/citizen";
+  if (role === "ecosystem_builder") return "/builder";
+  return "/";
 }
 
 function PublicOnlyRoute({ children }) {
@@ -144,6 +169,30 @@ function AppRoutes() {
               <ForgotPassword />
             </PublicLayout>
           </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/verification"
+        element={
+          <ProtectedRoute>
+            <VerificationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviewer/verifications"
+        element={
+          <ProtectedRoute roles={["admin", "reviewer"]}>
+            <VerificationQueue />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/verifications"
+        element={
+          <ProtectedRoute roles={["admin"]}>
+            <VerificationQueue />
+          </ProtectedRoute>
         }
       />
       <Route

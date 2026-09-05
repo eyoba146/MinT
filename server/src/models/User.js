@@ -66,6 +66,21 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    verificationStatus: {
+      type: String,
+      enum: ["not_submitted", "pending", "approved", "rejected"],
+      default: "not_submitted",
+    },
+    verificationDocuments: [
+      {
+        documentType: { type: String, required: true },
+        cloudinaryUrl: { type: String, required: true },
+        originalName: { type: String, default: "" },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
+    verificationNotes: { type: String, default: "" },
+    verifiedAt: { type: Date, default: null },
     emailVerified: {
       type: Boolean,
       default: false,

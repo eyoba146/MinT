@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const sendEmail = require("../utils/sendEmail");
+const streamifier = require("streamifier");
 
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -19,6 +20,7 @@ const formatUser = (user) => ({
   builderType: user.builderType || "",
   investmentRange: user.investmentRange || "",
   focus: user.focus || [],
+  verificationStatus: user.verificationStatus || "not_submitted",
 });
 
 function generateCode() {
@@ -376,6 +378,171 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
+exports.submitVerification = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { documentType, originalName } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Please upload a document" });
+    }
+    if (!documentType) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Document type is required" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const cloudinary = require("../config/cloudinary");
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "mints/verifications", resource_type: "auto" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        },
+      );
+      streamifier.createReadStream(file.buffer).pipe(stream);
+    });
+
+    user.verificationDocuments.push({
+      documentType,
+      cloudinaryUrl: result.secure_url,
+      originalName: originalName || file.originalname,
+      uploadedAt: new Date(),
+    });
+    user.verificationStatus = "pending";
+    user.verificationNotes = "";
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Verification document submitted",
+      user: formatUser(user),
+    });
+  } catch (error) {
+    console.error("Submit verification error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.getVerificationStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    res.status(200).json({
+      success: true,
+      data: {
+        status: user.verificationStatus,
+        documents: user.verificationDocuments,
+        notes: user.verificationNotes,
+        verifiedAt: user.verifiedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Get verification status error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.getPendingVerifications = async (req, res) => {
+  try {
+    const users = await User.find({
+      role: { $in: ["founder", "investor", "ecosystem_builder"] },
+      verificationStatus: "pending",
+    }).select(
+      "fullName email role verificationDocuments verificationNotes createdAt",
+    );
+    res.status(200).json({ success: true, count: users.length, data: users });
+  } catch (error) {
+    console.error("Get pending verifications error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.reviewVerification = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status, notes } = req.body;
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid status" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    user.verificationStatus = status;
+    user.verificationNotes = notes || "";
+    user.verifiedAt = status === "approved" ? new Date() : null;
+    await user.save();
+
+    // Send email notification
+    const subject =
+      status === "approved"
+        ? "Your account verification has been approved"
+        : "Your account verification was rejected";
+    const html = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; margin: 0;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+          <div style="background: linear-gradient(135deg, #0f172a 0%, #134e4a 100%); padding: 24px 32px;">
+            <h1 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700;">Ministry of Innovation and Technology</h1>
+            <p style="margin: 8px 0 0; color: #99f6e4; font-size: 13px;">Digital Innovation Hub</p>
+          </div>
+          <div style="padding: 32px;">
+            <h2 style="margin: 0 0 16px; color: #0f172a; font-size: 20px; font-weight: 700;">
+              ${status === "approved" ? "Verification Approved" : "Verification Rejected"}
+            </h2>
+            <p style="margin: 0 0 24px; color: #475569; font-size: 14px; line-height: 1.6;">
+              ${
+                status === "approved"
+                  ? "Congratulations! Your submitted documents have been verified. You now have full access to the platform."
+                  : "Unfortunately, your submitted documents did not meet the requirements. Please review the notes below and submit new documents."
+              }
+            </p>
+            ${notes ? `<p style="margin: 0 0 24px; color: #475569; font-size: 14px; background: #f1f5f9; padding: 12px; border-radius: 8px;"><strong>Reviewer notes:</strong> ${notes}</p>` : ""}
+            <p style="margin: 0; color: #94a3b8; font-size: 12px;">Regards,<br />MinT Digital Innovation Hub</p>
+          </div>
+          <div style="background-color: #f1f5f9; padding: 16px 32px; border-top: 1px solid #e2e8f0;">
+            <p style="margin: 0; color: #94a3b8; font-size: 11px; text-align: center;">Digital Ethiopia · Ministry of Innovation and Technology</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendEmail({ to: user.email, subject, html });
+
+    res.status(200).json({
+      success: true,
+      message: `Verification ${status}`,
+      user: formatUser(user),
+    });
+  } catch (error) {
+    console.error("Review verification error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 exports.verifyResetCode = async (req, res) => {
   try {
     const { email, code } = req.body;
@@ -434,7 +601,9 @@ exports.login = async (req, res) => {
       });
     }
 
-    if (!user.emailVerified) {
+    // Staff roles are internally provisioned and don't require email verification
+    const staffRoles = ["admin", "reviewer", "moderator"];
+    if (!user.emailVerified && !staffRoles.includes(user.role)) {
       return res.status(403).json({
         success: false,
         message: "Please verify your email before logging in",

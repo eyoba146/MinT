@@ -18,6 +18,7 @@ import {
   FileCheck,
   CheckCircle2,
   XCircle,
+  Shield,
 } from "lucide-react";
 
 const TABS = [
@@ -43,6 +44,7 @@ export default function ReviewerDashboard() {
   const [annualLoading, setAnnualLoading] = useState(true);
   const [reportNotes, setReportNotes] = useState({});
   const [reviewingReport, setReviewingReport] = useState(null);
+  const [pendingVerifications, setPendingVerifications] = useState(0);
 
   const fetchStats = async () => {
     try {
@@ -81,6 +83,15 @@ export default function ReviewerDashboard() {
     }
   };
 
+  const fetchVerificationCount = async () => {
+    try {
+      const res = await apiRequest("/auth/admin/verifications");
+      setPendingVerifications(res.count || res.data?.length || 0);
+    } catch (err) {
+      console.error("Failed to load pending verifications count", err);
+    }
+  };
+
   const handleAnnualReportReview = async (report, status) => {
     setReviewingReport(report._id);
     try {
@@ -92,7 +103,9 @@ export default function ReviewerDashboard() {
         },
       );
       toast(`Annual report marked ${status}`, "success");
-      setAnnualReports((prev) => prev.filter((item) => item._id !== report._id));
+      setAnnualReports((prev) =>
+        prev.filter((item) => item._id !== report._id),
+      );
       setReportNotes((prev) => ({ ...prev, [report._id]: "" }));
     } catch (err) {
       toast(err.message || "Failed to review annual report", "error");
@@ -108,6 +121,7 @@ export default function ReviewerDashboard() {
         fetchStats(),
         fetchStartups("queue", ""),
         fetchAnnualReports(),
+        fetchVerificationCount(),
       ]);
       setLoading(false);
     };
@@ -151,7 +165,7 @@ export default function ReviewerDashboard() {
         <strong>Admin only</strong>.
       </div>
 
-      <div className="grid sm:grid-cols-4 gap-4 mb-8">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard
           label="In queue"
           value={stats?.submitted ?? 0}
@@ -176,13 +190,20 @@ export default function ReviewerDashboard() {
           icon={Building2}
           color="teal"
         />
+        <StatCard
+          label="Pending Verifications"
+          value={pendingVerifications}
+          icon={Shield}
+          color="purple"
+        />
       </div>
 
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
         <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              <FileCheck className="w-4 h-4 text-blue-600" /> Annual report compliance
+              <FileCheck className="w-4 h-4 text-blue-600" /> Annual report
+              compliance
             </h2>
             <p className="text-xs text-slate-500 mt-1">
               Review reports submitted by designated founders.

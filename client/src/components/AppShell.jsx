@@ -29,14 +29,26 @@ const NAV = {
     { to: "/admin/builders", label: "Ecosystem builders", icon: Network },
     { to: "/admin/users", label: "Users", icon: Users },
     { to: "/admin/opportunities", label: "Opportunities", icon: Briefcase },
+    // { to: "/admin/verifications", label: "Verifications", icon: Shield },
   ],
   reviewer: [
-    { to: "/reviewer", label: "Startup reviews", icon: ClipboardList, end: true },
+    {
+      to: "/reviewer",
+      label: "Startup reviews",
+      icon: ClipboardList,
+      end: true,
+    },
     { to: "/reviewer/builders", label: "Builder reviews", icon: Building2 },
     { to: "/reviewer/opportunities", label: "Opportunities", icon: Megaphone },
+    { to: "/reviewer/verifications", label: "Verifications", icon: Shield },
   ],
   moderator: [
-    { to: "/moderator", label: "Opportunity posts", icon: Megaphone, end: true },
+    {
+      to: "/moderator",
+      label: "Opportunity posts",
+      icon: Megaphone,
+      end: true,
+    },
     { to: "/moderator/startups", label: "Startups", icon: Building2 },
     { to: "/moderator/builders", label: "Builders", icon: Network },
     { to: "/moderator/browse", label: "Public feed", icon: Briefcase },
@@ -50,10 +62,22 @@ const NAV = {
   ],
   investor: [
     { to: "/investor", label: "Overview", icon: LayoutDashboard, end: true },
-    { to: "/investor/directory", label: "Designated startups", icon: Building2 },
+    {
+      to: "/investor/directory",
+      label: "Designated startups",
+      icon: Building2,
+    },
     { to: "/investor/builders", label: "Ecosystem builders", icon: Network },
-    { to: "/investor/opportunities", label: "Post opportunity", icon: Briefcase },
-    { to: "/investor/browse-opportunities", label: "All opportunities", icon: Shield },
+    {
+      to: "/investor/opportunities",
+      label: "Post opportunity",
+      icon: Briefcase,
+    },
+    {
+      to: "/investor/browse-opportunities",
+      label: "All opportunities",
+      icon: Shield,
+    },
   ],
   citizen: [
     { to: "/citizen", label: "Overview", icon: LayoutDashboard, end: true },
@@ -91,7 +115,11 @@ export default function AppShell({ title, subtitle, children, actions }) {
   const SidebarContent = (
     <div className="flex flex-col h-full bg-white border-r border-slate-200">
       <div className="px-5 py-5 border-b border-slate-200">
-        <Link to="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
+        <Link
+          to="/"
+          className="flex items-center gap-3"
+          onClick={() => setOpen(false)}
+        >
           <div className="w-16 h-14 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
             <img
               src="/logo.png"
@@ -132,7 +160,11 @@ export default function AppShell({ title, subtitle, children, actions }) {
         ))}
 
         <div className="pt-4 mt-3 border-t border-slate-100 space-y-1">
-          <NavLink to="/profile" className={linkClass} onClick={() => setOpen(false)}>
+          <NavLink
+            to="/profile"
+            className={linkClass}
+            onClick={() => setOpen(false)}
+          >
             <User className="w-5 h-5 shrink-0" strokeWidth={2} />
             <span>Profile</span>
           </NavLink>
@@ -148,7 +180,9 @@ export default function AppShell({ title, subtitle, children, actions }) {
             <div className="text-sm font-semibold text-slate-900 truncate">
               {user?.fullName || "User"}
             </div>
-            <div className="text-xs text-slate-500 truncate">{user?.email || ""}</div>
+            <div className="text-xs text-slate-500 truncate">
+              {user?.email || ""}
+            </div>
           </div>
         </div>
         <button
@@ -222,7 +256,9 @@ export default function AppShell({ title, subtitle, children, actions }) {
                 Public site
                 <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
               </Link>
-              {actions && <div className="flex items-center gap-2">{actions}</div>}
+              {actions && (
+                <div className="flex items-center gap-2">{actions}</div>
+              )}
             </div>
           </div>
         </header>

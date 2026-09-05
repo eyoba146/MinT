@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
       method: "POST",
       body: { fullName, email, password, role },
     });
-    return data; // now returns just response, user not logged in yet
+    return data;
   };
 
   const verifyEmail = async (email, code) => {
@@ -61,16 +61,11 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const updateProfile = async (profileData) => {
-    const data = await apiRequest("/auth/profile", {
-      method: "PUT",
-      body: profileData,
+  const resendVerification = async (email) => {
+    return await apiRequest("/auth/resend-verification", {
+      method: "POST",
+      body: { email },
     });
-
-    setUser(data.user);
-    localStorage.setItem("dih_user", JSON.stringify(data.user));
-
-    return data.user;
   };
 
   const forgotPassword = async (email) => {
@@ -86,18 +81,40 @@ export function AuthProvider({ children }) {
       body: { email, code, newPassword },
     });
   };
-  const resendVerification = async (email) => {
-    return await apiRequest("/auth/resend-verification", {
-      method: "POST",
-      body: { email },
-    });
-  };
+
   const verifyResetCode = async (email, code) => {
     return await apiRequest("/auth/verify-reset-code", {
       method: "POST",
       body: { email, code },
     });
   };
+
+  const submitVerification = async (formData) => {
+    const data = await apiRequest("/auth/verification", {
+      method: "POST",
+      body: formData,
+    });
+    setUser(data.user);
+    localStorage.setItem("dih_user", JSON.stringify(data.user));
+    return data.user;
+  };
+
+  const getVerificationStatus = async () => {
+    return await apiRequest("/auth/verification");
+  };
+
+  const updateProfile = async (profileData) => {
+    const data = await apiRequest("/auth/profile", {
+      method: "PUT",
+      body: profileData,
+    });
+
+    setUser(data.user);
+    localStorage.setItem("dih_user", JSON.stringify(data.user));
+
+    return data.user;
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -114,11 +131,13 @@ export function AuthProvider({ children }) {
         login,
         register,
         verifyEmail,
-        updateProfile,
+        resendVerification,
         forgotPassword,
         resetPassword,
-        resendVerification,
         verifyResetCode,
+        submitVerification,
+        getVerificationStatus,
+        updateProfile,
         logout,
         isAuthenticated: !!user,
       }}
