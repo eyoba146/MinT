@@ -10,6 +10,7 @@ import {
   Shield,
   Eye,
   EyeOff,
+  KeyRound,
 } from "lucide-react";
 
 function roleHome(role) {
@@ -22,30 +23,44 @@ function roleHome(role) {
 }
 
 const ROLES = [
-  { value: "founder", label: "Startup founder", desc: "Apply for MinT designation" },
-  { value: "investor", label: "Investor", desc: "Discover designated startups" },
-  { value: "ecosystem_builder", label: "Ecosystem builder", desc: "Incubator, accelerator, or hub" },
+  {
+    value: "founder",
+    label: "Startup founder",
+    desc: "Apply for MinT designation",
+  },
+  {
+    value: "investor",
+    label: "Investor",
+    desc: "Discover designated startups",
+  },
+  {
+    value: "ecosystem_builder",
+    label: "Ecosystem builder",
+    desc: "Incubator, accelerator, or hub",
+  },
   { value: "citizen", label: "Citizen", desc: "Explore the public portal" },
 ];
 
 export default function Register() {
+  const [step, setStep] = useState("form"); // "form" | "verify"
   const [form, setForm] = useState({
     fullName: "",
     email: "",
     password: "",
     role: "founder",
   });
+  const [verificationCode, setVerificationCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, verifyEmail } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmitRegistration = async (e) => {
     e.preventDefault();
     setError("");
     if (!form.fullName.trim() || !form.email.trim() || !form.password) {
@@ -58,19 +73,114 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const user = await register(
+      await register(
         form.fullName.trim(),
         form.email.trim(),
         form.password,
-        form.role
+        form.role,
       );
-      navigate(roleHome(user.role), { replace: true });
+      setStep("verify");
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSubmitVerification = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!verificationCode.trim()) {
+      setError("Please enter the verification code.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const user = await verifyEmail(
+        form.email.trim(),
+        verificationCode.trim(),
+      );
+      navigate(roleHome(user.role), { replace: true });
+    } catch (err) {
+      setError(err.message || "Verification failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === "verify") {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-6 bg-gradient-to-b from-slate-50 to-teal-50/30">
+        <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 p-8 shadow-sm space-y-6">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-4">
+              <KeyRound size={24} />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">
+              Verify your email
+            </h2>
+            <p className="text-sm text-slate-500 mt-2">
+              Enter the 6-digit code sent to <strong>{form.email}</strong>
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmitVerification} className="space-y-4">
+            <div>
+              <label
+                htmlFor="code"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
+                Verification code
+              </label>
+              <input
+                id="code"
+                name="code"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                placeholder="000000"
+                maxLength={6}
+                autoFocus
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500 text-center text-2xl tracking-[0.5em] font-bold"
+              />
+            </div>
+
+            {error && (
+              <p
+                role="alert"
+                className="text-sm text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-xl"
+              >
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 disabled:from-teal-400 disabled:to-teal-400 text-white font-semibold rounded-xl text-sm shadow-md"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Verifying…
+                </>
+              ) : (
+                <>
+                  Verify email <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStep("form")}
+              className="w-full text-sm text-teal-700 font-semibold hover:underline"
+            >
+              Back to registration
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-slate-50">
@@ -83,7 +193,9 @@ export default function Register() {
             </div>
             <div>
               <div className="font-semibold text-sm">MinT Digital Hub</div>
-              <div className="text-xs text-teal-300">Ministry of Innovation & Technology</div>
+              <div className="text-xs text-teal-300">
+                Ministry of Innovation & Technology
+              </div>
             </div>
           </div>
           <div className="pt-4 space-y-3">
@@ -91,8 +203,8 @@ export default function Register() {
               Create your portal account
             </h1>
             <p className="text-slate-300 text-sm leading-relaxed max-w-lg">
-              Register as a founder, investor, ecosystem builder, or citizen to use the national
-              startup designation platform.
+              Register as a founder, investor, ecosystem builder, or citizen to
+              use the national startup designation platform.
             </p>
           </div>
         </div>
@@ -107,15 +219,24 @@ export default function Register() {
             <h2 className="text-xl font-bold text-slate-900">Create account</h2>
             <p className="text-slate-500 text-sm mt-1">
               Already have an account?{" "}
-              <Link to="/login" className="text-teal-700 font-semibold hover:underline">
+              <Link
+                to="/login"
+                className="text-teal-700 font-semibold hover:underline"
+              >
                 Sign in
               </Link>
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+          <form
+            onSubmit={handleSubmitRegistration}
+            className="space-y-4"
+            autoComplete="on"
+          >
             <div>
-              <p className="block text-sm font-medium text-slate-700 mb-2">I am registering as</p>
+              <p className="block text-sm font-medium text-slate-700 mb-2">
+                I am registering as
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {ROLES.map((r) => (
                   <button
@@ -130,23 +251,33 @@ export default function Register() {
                   >
                     <div
                       className={`text-sm font-semibold ${
-                        form.role === r.value ? "text-teal-800" : "text-slate-800"
+                        form.role === r.value
+                          ? "text-teal-800"
+                          : "text-slate-800"
                       }`}
                     >
                       {r.label}
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5">{r.desc}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {r.desc}
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label
+                htmlFor="fullName"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
                 Full name
               </label>
               <div className="relative">
-                <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <User
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   id="fullName"
                   name="fullName"
@@ -160,11 +291,17 @@ export default function Register() {
             </div>
 
             <div>
-              <label htmlFor="reg-email" className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label
+                htmlFor="reg-email"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
                 Email address
               </label>
               <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Mail
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   id="reg-email"
                   name="email"
@@ -179,11 +316,17 @@ export default function Register() {
             </div>
 
             <div>
-              <label htmlFor="reg-password" className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label
+                htmlFor="reg-password"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
                 Password
               </label>
               <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Lock
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   id="reg-password"
                   name="password"
@@ -206,7 +349,10 @@ export default function Register() {
             </div>
 
             {error && (
-              <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-xl">
+              <p
+                role="alert"
+                className="text-sm text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-xl"
+              >
                 {error}
               </p>
             )}
@@ -218,7 +364,8 @@ export default function Register() {
             >
               {loading ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" /> Creating account…
+                  <Loader2 size={16} className="animate-spin" /> Creating
+                  account…
                 </>
               ) : (
                 <>

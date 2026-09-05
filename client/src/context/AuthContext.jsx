@@ -8,7 +8,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from storage; optionally validate later via /auth/me if available
+  // Restore session from storage
   useEffect(() => {
     const savedUser = localStorage.getItem("dih_user");
     const savedToken = localStorage.getItem("dih_token");
@@ -44,6 +44,14 @@ export function AuthProvider({ children }) {
       method: "POST",
       body: { fullName, email, password, role },
     });
+    return data; // now returns just response, user not logged in yet
+  };
+
+  const verifyEmail = async (email, code) => {
+    const data = await apiRequest("/auth/verify-email", {
+      method: "POST",
+      body: { email, code },
+    });
 
     setUser(data.user);
     setToken(data.token);
@@ -65,6 +73,25 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const forgotPassword = async (email) => {
+    return await apiRequest("/auth/forgot-password", {
+      method: "POST",
+      body: { email },
+    });
+  };
+
+  const resetPassword = async (email, code, newPassword) => {
+    return await apiRequest("/auth/reset-password", {
+      method: "POST",
+      body: { email, code, newPassword },
+    });
+  };
+  const resendVerification = async (email) => {
+    return await apiRequest("/auth/resend-verification", {
+      method: "POST",
+      body: { email },
+    });
+  };
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -80,7 +107,11 @@ export function AuthProvider({ children }) {
         loading,
         login,
         register,
+        verifyEmail,
         updateProfile,
+        forgotPassword,
+        resetPassword,
+        resendVerification,
         logout,
         isAuthenticated: !!user,
       }}
