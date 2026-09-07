@@ -1,176 +1,134 @@
+# MinT Digital Innovation Hub
 
-# Digital Innovation Hub for MinT 🇪🇹
+The MinT Digital Innovation Hub is a digital platform for Ethiopia's startup and innovation ecosystem. It connects founders, investors, ecosystem builders, reviewers, administrators, moderators, and citizens through workflows for startup designation, verification, investment discovery, opportunities, and secure document sharing.
 
+## Live platform
 
-A digital platform designed to connect Ethiopian startup founders, investors, citizens, and innovation stakeholders with opportunities, resources, and a trusted startup ecosystem.
+| Service     | URL                                         |
+| ----------- | ------------------------------------------- |
+| Frontend    | https://mint-digital-innovation.vercel.app/ |
+| Backend API | https://mint-3c4v.onrender.com              |
 
+## Main capabilities
 
-The platform supports startup onboarding and MinT verification, investor–startup connections, secure document sharing, and moderated innovation opportunities.
+### Authentication and accounts
 
+- JWT authentication with protected frontend routes and API endpoints.
+- Role-based access for founders, investors, ecosystem builders, reviewers, moderators, administrators, and citizens.
+- Email verification before a new account becomes active.
+- Pending registrations allow users to correct an email before verification.
+- Verification-code resend protection with a 60-second countdown.
+- Password reset and profile editing.
+- Profile settings grouped into account information, role preferences, and security.
+- Role protection for restricted pages such as the verification workflow.
 
-## 🌐 Live Platform
+### Founder and startup designation
 
+- Create, save, edit, and submit startup designation applications.
+- Idea-stage ventures can use a startup or project working name; this does not imply legal registration.
+- Application fields cover problem, solution, innovation, technology, scalability, market impact, ownership, economic value, legal information, and supporting documents.
+- Live eligibility checklist with 14 requirements and a real-time progress bar.
+- AI-assisted text polishing for selected application descriptions.
+- Startup dashboard, application status, designation certificate, annual reports, and renewal workflow.
+- Founder-controlled data room with document upload, deletion, and investor access management.
 
-| Service | URL |
-|---|---|
-| **Frontend** | https://digital-innovation-hub-for-mint.vercel.app |
-| **Backend API** | https://digital-innovation-hub-for-mint.onrender.com |
+### Verification and review
 
+- Structured startup review workflow for reviewers and administrators.
+- Case details, review status, decisions, clarification requests, audit history, and designation actions.
+- Reviewer dashboard for startup applications, builder reviews, and verification queues.
+- Sidebar notification counters for pending builder reviews and verification cases.
+- Administrator actions for approval, rejection, suspension, revocation, user management, and analytics.
 
----
+### Investor discovery and AI matching
 
+- Browse designated startups and ecosystem builders.
+- Investor profiles include organization, investment range, and focus sectors such as FinTech, AgriTech, EdTech, HealthTech, LogisticsTech, and CleanTech.
+- AI matching ranks the actual designated-startup registry using investor preferences.
+- The directory can apply or clear the AI ranking filter without a separate recommendation section.
+- Local fallback ranking keeps matching available when the AI provider is unavailable or quota-limited.
+- Investor interest tracking, startup connections, deal-stage updates, and data-room access requests.
 
-## ✨ Key Features
+### Opportunities and ecosystem builders
 
+- Create and moderate jobs, internships, and innovation opportunities.
+- Admin and moderator approval before opportunities become publicly visible.
+- Ecosystem builder applications, public builder directory, and reviewer/admin management.
+- Public directory pages for startups, builders, and opportunities.
 
-### 🔐 Authentication & Role-Based Access Control
+### User experience and accessibility
 
+- Responsive dashboard shell with role-specific navigation.
+- Consistent light interface with readable spacing, form controls, focus states, and clear status indicators.
+- Accessible progress indicators and role-aware navigation.
+- Typography adjustments for older users, including improved content sizing and textarea line spacing.
+- Responsive authentication, registration, and email-verification screens.
 
-- JWT-based authentication
-- Secure user registration and login
-- Role-based authorization
-- Protected routes and API endpoints
-- User profile management
+## User roles
 
+| Role              | Main capabilities                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Founder           | Manage a startup application, submit for designation, manage documents and investor access, view certificates and reports  |
+| Investor          | Maintain preferences, browse startups, use AI matching, express interest, request data-room access, and post opportunities |
+| Ecosystem builder | Create and manage a builder profile and participate in the innovation directory                                            |
+| Reviewer          | Review startup designation cases, builder applications, and verification queues                                            |
+| Moderator         | Moderate startups, ecosystem builders, and opportunity posts                                                               |
+| Administrator     | Manage users, review cases, moderate content, view analytics, and manage designation decisions                             |
+| Citizen           | Browse public startups, builders, and approved opportunities                                                               |
 
-### 🚀 Startup Management
-
-
-- Founder startup registration
-- Startup profile creation and management
-- Startup submission for MinT verification
-- Admin review and approval/rejection
-- Verified startup status
-- Public directory of verified startups
-- Startup statistics and dashboard
-
-
-### 🏢 MinT Verification Workflow
-
-
-The platform provides a structured verification process:
-
+## System architecture
 
 ```text
-Founder creates startup
-        ↓
-Startup submitted
-        ↓
-MinT Admin reviews
-        ↓
-   ┌────┴────┐
-   ↓         ↓
-Approve    Reject
-   ↓         ↓
-Verified   Rejected
-   ↓
-Public Directory
+React 19 + Vite + Tailwind CSS
+              |
+              | HTTPS REST API
+              v
+Node.js + Express + Mongoose
+       |          |          |
+       v          v          v
+ MongoDB      Cloudinary   Brevo
+  Atlas       file storage  email API
+              |
+              v
+        Google Gemini API
+        optional AI features
+```
 
-When a startup is approved, the founder receives an email notification.
+## Technology stack
 
-📁 Secure Data Room
+### Frontend
 
-Founders can securely manage startup documents and control investor access.
+- React 19, Vite, Tailwind CSS 4, React Router, Axios
+- Lucide React, Recharts, Motion, and Three.js
 
-Upload startup documents
-View uploaded documents
-Delete documents
-Investor access requests
-Founder approval/denial of requests
-Controlled document access
-Secure document downloads
-💼 Investor Features
-Browse verified startups
-Request access to startup Data Rooms
-Track access requests
-Receive access notifications
-Post job and internship opportunities
-📢 Opportunities
+### Backend
 
-The platform supports moderated opportunities such as:
+- Node.js, Express 5, Mongoose, JSON Web Tokens, bcryptjs, Multer
+- Cloudinary SDK, Brevo email API, and Google Gemini REST API
 
-Jobs
-Internships
-Innovation opportunities
+### Services
 
-Opportunities submitted by users require administrator approval before becoming visible.
+- MongoDB Atlas for data
+- Cloudinary for startup logos and data-room files
+- Brevo for transactional email
+- Google Gemini for text polishing and investor-startup ranking
+- Vercel for the frontend and Render for the backend
 
-👨‍💼 Admin Dashboard
+## Project structure
 
-Administrators can:
-
-Review startups
-Approve startups
-Reject startups
-Delete startups
-Manage users
-Moderate opportunities
-View platform statistics
-👥 User Roles
-Role	Capabilities
-Founder	Create and manage startups, upload Data Room documents, manage investor access
-Investor	Browse verified startups, request Data Room access, post opportunities
-Admin	Verify/reject startups, manage users, moderate opportunities, view statistics
-Citizen	Browse verified startups and approved opportunities
-🏗️ System Architecture
-                    Digital Innovation Hub
-                             │
-             ┌───────────────┴───────────────┐
-             │                               │
-        React Frontend                  Express API
-           Vercel                         Render
-             │                               │
-             │                         ┌─────┴─────┐
-             │                         │           │
-             │                    MongoDB Atlas  Cloudinary
-             │
-             └──────────── API ────────────────┘
-                             
-                         Brevo Email API
-🛠️ Technology Stack
-Frontend
-React 19
-Vite
-Tailwind CSS
-React Router
-Axios
-Backend
-Node.js
-Express 5
-Mongoose
-JWT
-bcrypt
-Multer
-Database
-MongoDB Atlas
-File Storage
-Cloudinary
-Email
-Brevo API
-HTTPS API integration
-SMTP is not used for production email delivery
-Deployment
-Vercel — Frontend
-Render — Backend
-MongoDB Atlas — Database
-Cloudinary — File storage
-Brevo — Transactional email
-📂 Project Structure
+```text
 Digital-Innovation-Hub-For-MINT/
-│
 ├── client/
 │   ├── public/
 │   ├── src/
 │   │   ├── components/
-│   │   ├── pages/
 │   │   ├── context/
-│   │   ├── utils/
-│   │   └── ...
+│   │   ├── data/
+│   │   ├── pages/
+│   │   └── utils/
 │   ├── index.html
 │   ├── package.json
-│   ├── vite.config.js
 │   └── vercel.json
-│
 ├── server/
 │   ├── src/
 │   │   ├── config/
@@ -181,327 +139,142 @@ Digital-Innovation-Hub-For-MINT/
 │   │   └── utils/
 │   ├── server.js
 │   └── package.json
-│
 └── README.md
-🔌 API Overview
+```
 
-Base URL:
+## Local development
 
-/api
+### Clone and install
 
-Authentication:
-
-Authorization: Bearer <JWT_TOKEN>
-Authentication — /api/auth
-Method	Endpoint	Access	Description
-POST	/register	Public	Register a new user
-POST	/login	Public	Login and receive JWT
-GET	/me	Private	Get current user
-PUT	/profile	Private	Update user profile
-Startups — /api/startups
-Method	Endpoint	Access	Description
-GET	/public	Public	List verified startups
-GET	/public-stats	Public	Get public startup statistics
-POST	/	Founder	Create startup
-GET	/my	Founder	Get founder's startup
-PUT	/my	Founder	Update founder's startup
-GET	/admin	Admin	List startups with filters
-GET	/stats	Admin	Get admin dashboard statistics
-PATCH	/:id/approve	Admin	Approve and verify startup
-PATCH	/:id/reject	Admin	Reject startup
-DELETE	/:id	Admin	Delete startup
-GET	/:id	Conditional	Get startup by ID
-Access Requests — /api/access-requests
-Method	Endpoint	Access	Description
-POST	/	Investor	Request Data Room access
-GET	/my	Investor	Get own requests
-GET	/incoming	Founder	Get incoming requests
-PATCH	/:id/approve	Founder	Approve investor access
-PATCH	/:id/deny	Founder	Deny investor access
-Documents — /api/documents
-Method	Endpoint	Access	Description
-POST	/	Founder	Upload document
-GET	/my	Founder	List own documents
-DELETE	/:id	Founder	Delete document
-GET	/startup/:startupId	Authorized	List startup documents
-GET	/:id/download	Authorized	Download document
-Opportunities — /api/opportunities
-Method	Endpoint	Access	Description
-GET	/	Authenticated	List approved opportunities
-GET	/my	Investor/Admin	List own opportunities
-POST	/	Investor/Admin	Create opportunity
-PATCH	/:id/approve	Admin	Approve opportunity
-PATCH	/:id/reject	Admin	Reject opportunity
-PUT	/:id	Admin	Update opportunity
-DELETE	/:id	Admin	Delete opportunity
-Users — /api/users
-Method	Endpoint	Access	Description
-GET	/	Admin	List users
-DELETE	/:id	Admin	Delete user
-💻 Local Development
-1. Clone the repository
-git clone https://github.com/abelixir/Digital-Innovation-Hub-For-MINT.git
-cd Digital-Innovation-Hub-For-MINT
-2. Install backend dependencies
+```bash
+git clone https://github.com/eyoba146/MinT.git
+cd MinT
 cd server
 npm install
-
-Create:
-
-server/.env
-
-Add the required environment variables.
-
-3. Start the backend
-npm run dev
-
-Backend:
-
-http://localhost:5000
-4. Install frontend dependencies
-
-Open another terminal:
-
-cd client
+cd ../client
 npm install
+```
 
-Create:
+### Environment variables
 
-client/.env
+Create `server/.env`:
 
-Add:
-
-VITE_API_URL=http://localhost:5000/api
-5. Start the frontend
-npm run dev
-
-Frontend:
-
-http://localhost:5173
-🔑 Environment Variables
-Backend — server/.env
+```env
 PORT=5000
-
-
 MONGO_URI=your_mongodb_uri
-
-
 JWT_SECRET=your_secure_secret
 JWT_EXPIRES_IN=7d
-
-
-CLIENT_URL=http://localhost:5173
-
+CLIENT_URL=http://localhost:3000
 
 BREVO_API_KEY=your_brevo_api_key
 EMAIL_USER=your_verified_sender@email.com
-EMAIL_FROM=Digital Innovation Hub <your_verified_sender@email.com>
-
+EMAIL_FROM=MinT Digital Innovation Hub <your_verified_sender@email.com>
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_key
 CLOUDINARY_API_SECRET=your_cloudinary_secret
-Frontend — client/.env
+
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+Create `client/.env`:
+
+```env
 VITE_API_URL=http://localhost:5000/api
-⚠️ Security
+```
 
-Never commit environment files containing secrets.
+Never commit environment files.
 
-Do not commit:
+### Run locally
 
-.env
-.env.local
+From `server/`:
 
-Production environment variables should be configured through the Vercel and Render dashboards.
+```bash
+npm run dev
+```
 
-🚀 Deployment
-Frontend — Vercel
+The API runs at `http://localhost:5000`.
 
-The frontend is deployed using Vercel.
+From `client/` in another terminal:
 
-Root Directory: client
+```bash
+npm run dev
+```
 
-Environment variable:
+The frontend runs at `http://localhost:3000`.
 
-VITE_API_URL=https://digital-innovation-hub-for-mint.onrender.com/api
-SPA Routing
+Create a production client build with `npm run build` from `client/`.
 
-React Router requires all frontend routes to resolve to index.html.
+## API overview
 
-This is handled by:
+The API base path is `/api`. Protected endpoints use:
 
-client/vercel.json
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
 
-with the appropriate SPA rewrite configuration.
+| Route group               | Purpose                                                                                                   |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `/api/auth`               | Registration, login, email verification, password reset, profile, and verification status                 |
+| `/api/startups`           | Public directory, founder applications, connections, case review, designation, suspension, and revocation |
+| `/api/ai`                 | Protected text polishing and investor-startup analysis                                                    |
+| `/api/access-requests`    | Investor data-room requests and founder decisions                                                         |
+| `/api/documents`          | Data-room documents and authorized downloads                                                              |
+| `/api/opportunities`      | Opportunity creation, moderation, and listings                                                            |
+| `/api/ecosystem-builders` | Builder applications, public profiles, and review actions                                                 |
+| `/api/certificates`       | Designation certificates                                                                                  |
+| `/api/audit`              | Administrative and startup case audit history                                                             |
+| `/api/users`              | Administrator user management                                                                             |
 
-Backend — Render
+## AI features
 
-The Express API is deployed using Render.
+Gemini is used for founder text polishing and investor-startup ranking. AI requests have a 30-second timeout. Investor matching includes a local fallback ranking so a temporary AI outage, malformed response, or provider quota limit does not prevent the directory from working. AI results support the user experience and do not replace formal MinT review or investment decisions.
 
-Root Directory: server
+## Deployment
 
-Configure all required backend environment variables in the Render dashboard.
+### Frontend: Vercel
 
-The production API is available at:
+- Root directory: `client`
+- Build command: `npm run build`
+- Environment variable: `VITE_API_URL=https://digital-innovation-hub-for-mint.onrender.com/api`
+- SPA rewrites are configured in `client/vercel.json`.
 
-https://digital-innovation-hub-for-mint.onrender.com
-Render Free Tier
+### Backend: Render
 
-The Render free instance may sleep after periods of inactivity, which can result in a cold-start delay when the API is accessed again.
+- Root directory: `server`
+- Start command: `npm start`
+- Configure all server environment variables in the Render dashboard.
 
-Database — MongoDB Atlas
+The Render free tier may sleep after inactivity, so the first request can take longer.
 
-The production database uses MongoDB Atlas.
+### MongoDB Atlas and Cloudinary
 
-Configure the required network access and database credentials in MongoDB Atlas.
+Configure MongoDB Atlas network access and credentials. Configure Cloudinary credentials for startup logos and data-room file storage.
 
-☁️ Cloudinary
+## Security notes
 
-Cloudinary is used for startup and Data Room file storage.
+- Do not commit `.env` or `.env.local` files.
+- Store production secrets only in Vercel and Render environment settings.
+- Passwords are hashed before storage.
+- Access is protected by JWT authentication, role checks, ownership checks, and data-room authorization.
+- File uploads are handled through the backend and Cloudinary.
+- AI API keys remain on the server and are never exposed to the browser.
 
-Required environment variables:
+## Development workflow
 
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-📧 Transactional Email
-
-The platform uses Brevo for transactional email notifications.
-
-Emails are triggered for important platform events, including:
-
-Startup approved
-        ↓
-Founder receives notification
-
-
-Investor requests Data Room access
-        ↓
-Founder receives notification
-
-
-Founder approves investor access
-        ↓
-Investor receives notification
-
-The production application communicates with Brevo through its HTTPS API.
-
-The current Brevo free tier provides approximately 300 emails per day. Check Brevo's current plan limits before relying on a specific quota.
-
-🔄 Core Platform Workflows
-Startup Verification
-Founder
-   │
-   ├── Create startup
-   │
-   └── Submit startup
-          │
-          ▼
-      MinT Admin
-          │
-     ┌────┴────┐
-     │         │
-  Approve    Reject
-     │         │
-     ▼         ▼
- Verified   Rejected
-     │
-     ▼
-Public Directory
-Investor Data Room Access
-Investor
-    │
-    ▼
-Request Access
-    │
-    ▼
-Founder
-    │
- ┌──┴──┐
- │     │
-Approve Deny
- │
- ▼
-Documents Accessible
-Opportunity Moderation
-Investor
-    │
-    ▼
-Create Job/Internship
-    │
-    ▼
-Admin Review
-    │
- ┌──┴──┐
- │     │
-Approve Reject
- │
- ▼
-Visible to Users
-🔒 Security
-
-The application implements:
-
-JWT authentication
-Password hashing
-Role-based authorization
-Protected API routes
-Founder ownership checks
-Admin-only moderation endpoints
-Controlled Data Room access
-Environment-based secret management
-Cloudinary-backed file storage
-
-Sensitive credentials should never be committed to source control.
-
-📈 Future Improvements
-
-Potential future improvements include:
-
-Advanced startup search and filtering
-Mentor matching
-Investor–startup recommendation system
-Multilingual AI assistant
-Innovation competitions
-Advanced analytics
-Notification center
-Enhanced startup verification workflow
-Audit logs for administrative actions
-Improved document security
-Production monitoring and observability
-👨‍💻 Development Workflow
-
-This project uses Git and GitHub for collaborative development.
-
-Recommended workflow:
-
+```bash
 git pull origin main
 
-
-# Make changes
-
+# Make changes and verify them
+cd client
+npm run build
 
 git add .
 git commit -m "Describe your changes"
 git push origin main
+```
 
-The deployment platforms automatically build and deploy new changes pushed to the configured branch.
-
-📄 License
+## License
 
 This project is licensed under the MIT License.
-
-
-
-## What you should do now
-
-
-Since **your fork is the one you're developing/deploying**, do this from your project in VS Code:
-
-
-### 1. Open the project
-
-
-```bash
-cd ~/Digital-Innovation-Hub-For-MINT
-code .
