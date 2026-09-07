@@ -1,5 +1,7 @@
 @import "tailwindcss";
-
+button {
+  @apply cursor-pointer;
+}
 @theme {
   --color-primary-50: #f0fdfa;
   --color-primary-100: #ccfbf1;
@@ -49,6 +51,18 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+@keyframes aiFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.animate-aiFloat {
+  animation: aiFloat 2.8s ease-in-out infinite;
 }
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;

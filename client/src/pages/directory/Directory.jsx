@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useDesignation } from "../../context/DesignationContext";
 import AppShell from "../../components/AppShell";
 import StartupCard from "../../components/StartupCard";
+import { getAiRecommendations } from "../../utils/aiRecommendations";
 import StatusBadge from "../../components/common/StatusBadge";
 import Modal from "../../components/common/Modal";
 import CertificateView from "../../components/common/CertificateView";
@@ -20,6 +20,7 @@ import {
   X,
   DollarSign,
   TrendingUp,
+  Sparkles,
 } from "lucide-react";
 
 const ALL_SECTORS = [
@@ -44,11 +45,12 @@ const INVESTMENT_TYPES = [
   { value: "credit_guarantee", label: "Credit Guarantee" },
 ];
 
+const MIN_AI_MATCH_SCORE = 60;
+
 export default function Directory({ embedded = false }) {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const { applications } = useDesignation();
-  const navigate = useNavigate();
   const [startups, setStartups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,6 +70,8 @@ export default function Directory({ embedded = false }) {
     currency: "ETB",
   });
   const [interestLoading, setInterestLoading] = useState(false);
+  const [aiRanking, setAiRanking] = useState(null);
+  const [aiRankingLoading, setAiRankingLoading] = useState(false);
 
   const detailBase =
     embedded && user?.role === "investor"
@@ -126,6 +130,44 @@ export default function Directory({ embedded = false }) {
 
     return matchesQuery && matchesSector && matchesStage;
   });
+
+  const handleAiRanking = async () => {
+    if (user?.role !== "investor" || startups.length === 0) return;
+    setAiRankingLoading(true);
+    try {
+      setAiRanking(await getAiRecommendations(startups, user));
+    } catch (err) {
+      toast(err.message || "Failed to generate recommendations", "error");
+    } finally {
+      setAiRankingLoading(false);
+    }
+  };
+
+  const clearAiRanking = () => setAiRanking(null);
+
+  const hasInvestorFocus = Array.isArray(user?.focus) && user.focus.length > 0;
+  const aiRankedStartups = aiRanking?.length
+    ? aiRanking
+        .filter(
+          (item) =>
+            !hasInvestorFocus || Number(item.score) >= MIN_AI_MATCH_SCORE,
+        )
+        .map((item) => {
+          const startup = startups.find(
+            (s) =>
+              String(s._id || s.id) === String(item.id) ||
+              s.companyName === item.name,
+          );
+          return startup ? { startup, item } : null;
+        })
+        .filter(Boolean)
+    : [];
+
+  const displayedStartups = aiRanking
+    ? aiRankedStartups
+        .map(({ startup }) => startup)
+        .filter((startup) => filteredStartups.includes(startup))
+    : filteredStartups;
 
   const handleExpressInterest = (startup) => {
     if (!isAuthenticated) {
@@ -279,10 +321,86 @@ export default function Directory({ embedded = false }) {
         </div>
       </div>
 
+      {user?.role === "investor" && (
+        <div className="relative overflow-hidden rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-teal-50 p-5 sm:p-6 shadow-sm">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-violet-200/40 blur-3xl" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative z-10">
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-violet-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                AI matching
+              </div>
+              <h2 className="text-lg font-black tracking-tight text-slate-900">
+                {aiRanking ? "Matches applied" : "Find your best matches"}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {aiRanking && (
+                <button
+                  onClick={clearAiRanking}
+                  className="px-4 py-2 rounded-xl border border-violet-200 bg-white text-xs font-bold text-slate-700 transition-colors hover:bg-violet-50"
+                >
+                  Clear AI filter
+                </button>
+              )}
+              {!aiRanking && (
+                <button
+                  onClick={handleAiRanking}
+                  disabled={aiRankingLoading || startups.length === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white text-xs font-bold shadow-sm"
+                >
+                  {aiRankingLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  Rank for me
+                </button>
+              )}
+            </div>
+          </div>
+
+          {aiRankingLoading && (
+            <div className="relative mt-5 flex items-center gap-4 overflow-hidden rounded-2xl border border-violet-100 bg-white/90 px-4 py-3 shadow-sm">
+              <div className="absolute -right-8 -top-10 h-24 w-24 rounded-full bg-violet-100 blur-2xl" />
+              <div className="relative flex items-center gap-4">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+                  <span className="absolute inset-1 animate-aiFloat rounded-full border border-violet-200 bg-gradient-to-br from-violet-500 to-teal-400 shadow-lg shadow-violet-300/50" />
+                  <span className="relative z-10 h-2 w-2 rounded-full bg-white/90 shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-black text-slate-900">
+                      Matching your profile
+                    </p>
+                    <span className="flex gap-0.5" aria-hidden="true">
+                      <span className="h-1 w-1 animate-pulse rounded-full bg-violet-500" />
+                      <span className="h-1 w-1 animate-pulse rounded-full bg-fuchsia-500 [animation-delay:150ms]" />
+                      <span className="h-1 w-1 animate-pulse rounded-full bg-teal-500 [animation-delay:300ms]" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {aiRanking && !aiRankingLoading && (
+            <div className="relative mt-5 flex items-center gap-2 rounded-2xl border border-teal-100 bg-white/80 px-3 py-2 text-xs text-teal-800">
+              <span className="relative flex h-6 w-6 items-center justify-center rounded-full bg-teal-50 text-teal-600">
+                <span className="h-2 w-2 rounded-full bg-teal-500" />
+              </span>
+              <strong className="font-black">AI matches applied</strong>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results Header */}
       <div className="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
         <span>
-          Showing <strong>{filteredStartups.length}</strong> designated entities
+          Showing <strong>{displayedStartups.length}</strong> of{" "}
+          <strong>{filteredStartups.length}</strong> designated startups
+          {aiRanking && " · AI matched"}
         </span>
         <span className="flex items-center gap-1 text-emerald-600 font-bold">
           <ShieldCheck className="w-3.5 h-3.5" />
@@ -298,7 +416,7 @@ export default function Directory({ embedded = false }) {
             Querying sovereign startup database...
           </span>
         </div>
-      ) : filteredStartups.length === 0 ? (
+      ) : displayedStartups.length === 0 ? (
         <div className="py-20 text-center bg-white rounded-3xl border border-slate-200 p-8 space-y-3">
           <div className="w-14 h-14 rounded-3xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
             <Building2 className="w-7 h-7" />
@@ -307,18 +425,21 @@ export default function Directory({ embedded = false }) {
             No designated startups found
           </h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Startups can apply for official MinT designation under Proclamation
-            No. 1396/2025 to appear in this public registry.
+            {aiRanking
+              ? "No AI matches remain after applying your current search and filters."
+              : "Startups can apply for official MinT designation under Proclamation No. 1396/2025 to appear in this public registry."}
           </p>
           {(searchQuery ||
             selectedSector !== "All Sectors" ||
-            selectedStage !== "All Stages") && (
-            <button
-              onClick={() => {
-                setSearchQuery("");
-                setSelectedSector("All Sectors");
-                setSelectedStage("All Stages");
-              }}
+            selectedStage !== "All Stages" ||
+            aiRanking) && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedSector("All Sectors");
+                  setSelectedStage("All Stages");
+                  clearAiRanking();
+                }}
               className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors mt-2"
             >
               Reset Filters
@@ -327,11 +448,20 @@ export default function Directory({ embedded = false }) {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredStartups.map((s) => (
+          {displayedStartups.map((s) => (
             <StartupCard
               key={s._id || s.id}
               startup={s}
               to={`${detailBase}/${s._id || s.id}`}
+              aiMatch={
+                aiRanking
+                  ? aiRankedStartups.find(
+                      ({ startup }) =>
+                        String(startup._id || startup.id) ===
+                        String(s._id || s.id),
+                    )?.item
+                  : null
+              }
               onInspectCert={() => setInspectCertApp(s)}
               onExpressInterest={
                 user?.role === "investor" ? handleExpressInterest : undefined

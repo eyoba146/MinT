@@ -71,7 +71,7 @@ const SECTOR_STYLES = {
   },
 };
 
-export default function StartupCard({ startup, to, onExpressInterest }) {
+export default function StartupCard({ startup, to, onExpressInterest, aiMatch }) {
   if (!startup) return null;
 
   const id = startup._id || startup.id;
@@ -98,7 +98,13 @@ export default function StartupCard({ startup, to, onExpressInterest }) {
   const SectorIcon = SECTOR_ICONS[sector] || SECTOR_ICONS.default;
 
   return (
-    <div className="group bg-white rounded-3xl border border-slate-200/90 p-6 shadow-sm hover:shadow-xl hover:border-teal-400/60 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+    <div
+      className={`group bg-white rounded-3xl border p-6 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${
+        aiMatch
+          ? "border-violet-300 ring-2 ring-violet-100 hover:border-violet-400"
+          : "border-slate-200/90 hover:border-teal-400/60"
+      }`}
+    >
       {/* Accent top gradient stripe */}
       <div
         className={`absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r ${sectorStyle.gradient}`}
@@ -135,6 +141,13 @@ export default function StartupCard({ startup, to, onExpressInterest }) {
 
           <StatusBadge status={startup.status || "designated"} size="sm" />
         </div>
+
+        {aiMatch && (
+          <div className="inline-flex items-center gap-1.5 mb-2 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-violet-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+            AI match{aiMatch.score ? ` · ${aiMatch.score}` : ""}
+          </div>
+        )}
 
         {/* Company Title */}
         <Link to={href} className="block mt-2">

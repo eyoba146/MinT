@@ -39,6 +39,48 @@ async function generateContent(prompt) {
   }
 }
 
+function buildFallbackRanking(startups, investorProfile = {}) {
+  const focus = (Array.isArray(investorProfile.focus) ? investorProfile.focus : [])
+    .map((sector) => String(sector).trim().toLowerCase())
+    .filter(Boolean);
+
+  return startups
+    .map((startup) => {
+      const name = startup.companyName || startup.name || "Unnamed startup";
+      const sector = String(startup.sector || "Unknown");
+      const description = String(
+        startup.innovationDescription || startup.description || "",
+      );
+      const normalizedSector = sector.toLowerCase();
+      const normalizedDescription = description.toLowerCase();
+      const sectorMatch = focus.some(
+        (item) =>
+          normalizedSector === item ||
+          normalizedSector.includes(item) ||
+          item.includes(normalizedSector),
+      );
+      const descriptionMatch = focus.some((item) =>
+        normalizedDescription.includes(item),
+      );
+      const score = sectorMatch ? 90 : descriptionMatch ? 70 : focus.length ? 30 : 50;
+
+      return {
+        id: startup.id || startup._id || null,
+        name,
+        score,
+        reason: focus.length
+          ? sectorMatch
+            ? `${sector} directly matches your selected focus sectors: ${focus.join(", ")}.`
+            : descriptionMatch
+              ? `The startup description relates to your selected focus sectors, although its listed sector is ${sector}.`
+              : `The startup is in ${sector}, outside your selected focus sectors: ${focus.join(", ")}.`
+          : "No focus sectors were provided, so this startup is included as a general match.",
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
 exports.polishText = async (req, res) => {
   try {
     const { text, mode = "enhance" } = req.body;
@@ -86,6 +128,7 @@ exports.analyzeOpportunities = async (req, res) => {
       .map(
         (s, i) => `
 Startup ${i + 1}:
+ID: ${s.id || s._id || "unknown"}
 Name: ${s.companyName || s.name}
 Sector: ${s.sector || "Unknown"}
 Description: ${s.innovationDescription || s.description || "No description"}
@@ -98,35 +141,64 @@ Location: ${s.location || s.country || "Unknown"}
     const prompt = `
 You are an AI investment analyst at the Ethiopian Ministry of Innovation and Technology.
 An investor with the following profile is browsing designated startups:
-Investment focus: ${investorProfile?.focus?.join(", ") || "All sectors"}
+Investment focus: ${Array.isArray(investorProfile?.focus) && investorProfile.focus.length ? investorProfile.focus.join(", ") : "All sectors"}
 Investment range: ${investorProfile?.investmentRange || "Not specified"}
 Organization: ${investorProfile?.organization || "Not specified"}
 
 Given the startups below, rank them from most to least aligned with the investor's criteria.
+Use sector focus as the strongest signal. Use the investment range and startup stage as
+secondary context, but do not invent funding amounts that are not provided.
+Only return genuine matches with a score of 60 or higher. Omit weak or unrelated startups.
 For each startup, provide:
 - Rank number
+- The exact startup ID supplied above
 - Name
 - Score (1-100)
 - 2-3 sentence reasoning
 
 ${startupTexts}
 
-Return as a JSON array with objects: { rank, name, score, reason }
+Return only valid JSON, as an array of objects with exactly this shape:
+[{ "rank": 1, "id": "startup-id", "name": "Startup name", "score": 85, "reason": "..." }]
     `;
 
-    const raw = await generateContent(prompt);
-
     let parsed;
+    let source = "ai";
     try {
-      const jsonStart = raw.indexOf("[");
-      const jsonEnd = raw.lastIndexOf("]");
-      const jsonStr = raw.slice(jsonStart, jsonEnd + 1);
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      parsed = [{ rank: 1, name: "AI response", score: 0, reason: raw }];
+      const raw = await generateContent(prompt);
+      const cleaned = raw
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+      const jsonStart = cleaned.indexOf("[");
+      const jsonEnd = cleaned.lastIndexOf("]");
+      const jsonStr = cleaned.slice(jsonStart, jsonEnd + 1);
+      parsed = JSON.parse(jsonStr)
+        .filter((item) => item && item.name)
+        .map((item, index) => ({
+          rank: Number(item.rank) || index + 1,
+          id: item.id || null,
+          name: String(item.name),
+          score: Math.max(0, Math.min(100, Number(item.score) || 0)),
+          reason: String(item.reason || "No explanation provided."),
+        }));
+    } catch (error) {
+      if (
+        !/quota exceeded|rate limit|429/i.test(error.message || "") &&
+        !(error instanceof SyntaxError)
+      ) {
+        throw error;
+      }
+      console.warn("Gemini quota exhausted; using local startup ranking.");
+      parsed = buildFallbackRanking(startups, investorProfile);
+      source = "local-fallback";
     }
 
-    res.status(200).json({ success: true, data: parsed });
+    res.status(200).json({
+      success: true,
+      data: parsed,
+      meta: { source },
+    });
   } catch (error) {
     console.error("Analyze opportunities error:", error);
     res

@@ -39,10 +39,10 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const register = async (fullName, email, password, role) => {
+  const register = async (fullName, email, password, role, extraData = {}) => {
     const data = await apiRequest("/auth/register", {
       method: "POST",
-      body: { fullName, email, password, role },
+      body: { fullName, email, password, role, ...extraData },
     });
     return data;
   };

@@ -6,6 +6,7 @@ import { useLocation } from "react-router-dom";
 import { apiRequest } from "../../utils/api";
 import AppShell from "../../components/AppShell";
 import StartupCard from "../../components/StartupCard";
+import { getAiRecommendations } from "../../utils/aiRecommendations";
 import {
   Search,
   Send,
@@ -31,6 +32,7 @@ import {
   ArrowUpRight,
   Edit3,
   FileDown,
+  Sparkles,
 } from "lucide-react";
 
 // Pipeline stage definitions (aligned with investorConnectionSchema enum)
@@ -167,6 +169,8 @@ export default function InvestorDashboard() {
 
   const [connections, setConnections] = useState([]);
   const [recommended, setRecommended] = useState([]);
+  const [aiRanking, setAiRanking] = useState(null);
+  const [aiRankingLoading, setAiRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Express interest modal
@@ -202,7 +206,7 @@ export default function InvestorDashboard() {
           apiRequest("/startups"),
         ]);
         setConnections(connRes.data || []);
-        setRecommended((startupsRes.data || []).slice(0, 6));
+        setRecommended(startupsRes.data || []);
       } catch (err) {
         console.error(err);
         toast(err.message || "Failed to load investor hub", "error");
@@ -250,7 +254,18 @@ export default function InvestorDashboard() {
       setExpressLoading(false);
     }
   };
-
+  const handleAiRanking = async () => {
+    if (!recommended || recommended.length === 0) return;
+    setAiRankingLoading(true);
+    try {
+      setAiRanking(await getAiRecommendations(recommended, user));
+    } catch (err) {
+      toast(err.message || "AI ranking failed", "error");
+      setAiRanking([]);
+    } finally {
+      setAiRankingLoading(false);
+    }
+  };
   const handleAdvanceStage = async () => {
     if (!stageModal) return;
     setStageLoading(true);
@@ -963,7 +978,84 @@ export default function InvestorDashboard() {
             </div>
           </div>
         </div>
+        {/* AI Ranked Startups */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-slate-900">
+                AI Recommended Matches
+              </h2>
+              <p className="text-xs text-slate-500">
+                Ranked based on your investment focus, range, and organization
+              </p>
+            </div>
+            <button
+              onClick={handleAiRanking}
+              disabled={aiRankingLoading || recommended.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white text-xs font-bold shadow-sm"
+            >
+              {aiRankingLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              Rank for me
+            </button>
+          </div>
 
+          {aiRankingLoading ? (
+            <div className="py-10 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-violet-600 mx-auto" />
+              <p className="text-xs text-slate-500 mt-2">Analyzing startups…</p>
+            </div>
+          ) : aiRanking && aiRanking.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {aiRanking.map((item, idx) => {
+                const startup = recommended.find(
+                  (s) =>
+                    String(s._id || s.id) === String(item.id) ||
+                    s.companyName === item.name,
+                );
+                const rankColors = [
+                  "bg-amber-100 text-amber-800",
+                  "bg-slate-200 text-slate-700",
+                  "bg-orange-100 text-orange-800",
+                ];
+                const rankColor =
+                  rankColors[idx] || "bg-slate-100 text-slate-600";
+                return (
+                  <div
+                    key={idx}
+                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${rankColor}`}
+                      >
+                        {item.rank}
+                      </span>
+                      <span className="text-xs font-semibold text-violet-700">
+                        Score: {item.score}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-slate-900">{item.name}</h3>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      {item.reason}
+                    </p>
+                    {startup && (
+                      <Link
+                        to={`/investor/directory/${startup._id || startup.id}`}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:underline mt-3"
+                      >
+                        View startup <ArrowRight size={12} />
+                      </Link>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
         {/* Recommended Designated Startups Section */}
         {recommended.length > 0 && (
           <div className="space-y-4">
@@ -986,7 +1078,7 @@ export default function InvestorDashboard() {
             </div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recommended.map((s) => (
+              {recommended.slice(0, 6).map((s) => (
                 <StartupCard
                   key={s._id || s.id}
                   startup={s}

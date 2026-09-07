@@ -9,6 +9,8 @@ import StatusBadge from "../../components/common/StatusBadge";
 import Modal from "../../components/common/Modal";
 import CertificateView from "../../components/common/CertificateView";
 import { isDesignated } from "../../utils/status";
+import AiPolishButton from "../../components/AiPolishButton";
+
 import {
   ArrowLeft,
   Loader2,
@@ -586,9 +588,17 @@ export default function StartupDetail({ embedded = false }) {
       >
         <form onSubmit={expressInterest} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Message to Founder
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">
+                Message to Founder
+              </label>
+              <AiPolishButton
+                text={interestForm.message}
+                onApply={(newText) =>
+                  setInterestForm({ ...interestForm, message: newText })
+                }
+              />
+            </div>
             <textarea
               required
               rows={3}
@@ -597,7 +607,7 @@ export default function StartupDetail({ embedded = false }) {
                 setInterestForm({ ...interestForm, message: e.target.value })
               }
               placeholder="Introduce your firm and investment thesis..."
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none overflow-hidden"
             />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">

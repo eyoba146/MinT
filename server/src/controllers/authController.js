@@ -106,7 +106,15 @@ async function sendPasswordResetEmail(email, code) {
 // ====================== REGISTER ======================
 exports.register = async (req, res) => {
   try {
-    const { fullName, email, password, role } = req.body;
+    const {
+      fullName,
+      email,
+      password,
+      role,
+      organization,
+      investmentRange,
+      focus,
+    } = req.body;
 
     if (!fullName || !email || !password) {
       return res.status(400).json({
@@ -139,9 +147,9 @@ exports.register = async (req, res) => {
     }
 
     const code = generateCode();
-    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-    const user = await User.create({
+    const userData = {
       fullName,
       email,
       password,
@@ -149,7 +157,20 @@ exports.register = async (req, res) => {
       emailVerified: false,
       emailVerificationCode: code,
       emailVerificationExpires: expires,
-    });
+    };
+
+    // Add investor-specific fields if role is investor
+    if (userRole === "investor") {
+      if (organization !== undefined)
+        userData.organization = organization.trim();
+      if (investmentRange !== undefined)
+        userData.investmentRange = investmentRange.trim();
+      if (focus !== undefined) {
+        userData.focus = Array.isArray(focus) ? focus : [];
+      }
+    }
+
+    const user = await User.create(userData);
 
     await sendVerificationEmail(email, code);
 
