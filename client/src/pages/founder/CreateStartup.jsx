@@ -5,6 +5,7 @@ import { useToast } from "../../context/ToastContext";
 import AppShell from "../../components/AppShell";
 import { SECTORS, STAGES, LOCATIONS, COUNTRIES } from "../../data/constants";
 import { getApiBase } from "../../utils/api";
+import AiPolishButton from "../../components/AiPolishButton";
 import {
   Loader2,
   ArrowLeft,
@@ -99,7 +100,9 @@ async function submitWithFiles(path, method, jsonData, files) {
     });
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("File upload timed out after 30 seconds. Please try again.");
+      throw new Error(
+        "File upload timed out after 30 seconds. Please try again.",
+      );
     }
     throw error;
   } finally {
@@ -479,6 +482,7 @@ export default function CreateStartup() {
               required
               rows={2}
               placeholder="Brief description of your company (max 500 characters)"
+              ai
             />
 
             <div className="space-y-2">
@@ -570,6 +574,7 @@ export default function CreateStartup() {
               onChange={handleChange}
               required
               rows={3}
+              ai
             />
             <TextArea
               label="Solution statement *"
@@ -578,6 +583,7 @@ export default function CreateStartup() {
               onChange={handleChange}
               required
               rows={3}
+              ai
             />
           </Section>
 
@@ -599,6 +605,7 @@ export default function CreateStartup() {
               required
               rows={3}
               placeholder="What is novel about your product, service, or process?"
+              ai
             />
             <TextArea
               label="Technology-enabled description *"
@@ -608,6 +615,7 @@ export default function CreateStartup() {
               required
               rows={3}
               placeholder="How does technology enable or enhance your solution?"
+              ai
             />
             <TextArea
               label="Scalability description *"
@@ -617,6 +625,7 @@ export default function CreateStartup() {
               required
               rows={3}
               placeholder="How can your solution grow its market share at low marginal cost?"
+              ai
             />
             <TextArea
               label="Market-changing description *"
@@ -626,6 +635,7 @@ export default function CreateStartup() {
               required
               rows={3}
               placeholder="How does your solution change or create the market?"
+              ai
             />
 
             <div className="space-y-2">
@@ -771,7 +781,11 @@ export default function CreateStartup() {
               ) : (
                 <Save size={18} />
               )}
-              {loading && submissionStep ? submissionStep : isEdit ? "Update draft" : "Save as draft"}
+              {loading && submissionStep
+                ? submissionStep
+                : isEdit
+                  ? "Update draft"
+                  : "Save as draft"}
             </button>
             <button
               type="button"
@@ -784,7 +798,9 @@ export default function CreateStartup() {
               ) : (
                 <Send size={18} />
               )}
-              {loading && submissionStep ? submissionStep : "Submit for designation review"}
+              {loading && submissionStep
+                ? submissionStep
+                : "Submit for designation review"}
             </button>
           </div>
 
@@ -859,12 +875,23 @@ function Field({ label, className = "", ...props }) {
   );
 }
 
-function TextArea({ label, ...props }) {
+function TextArea({ label, ai = false, ...props }) {
+  const { value, onChange, name } = props;
   return (
     <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-        {label}
-      </label>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="block text-sm font-medium text-slate-700">
+          {label}
+        </label>
+        {ai && value !== undefined && onChange && name && (
+          <AiPolishButton
+            text={value}
+            onApply={(newText) =>
+              onChange({ target: { name, value: newText } })
+            }
+          />
+        )}
+      </div>
       <textarea
         {...props}
         className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
