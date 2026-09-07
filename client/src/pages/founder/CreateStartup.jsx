@@ -877,6 +877,19 @@ function Field({ label, className = "", ...props }) {
 
 function TextArea({ label, ai = false, ...props }) {
   const { value, onChange, name } = props;
+  const textareaRef = useRef(null);
+
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    autoResize();
+  }, [value]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
@@ -894,7 +907,12 @@ function TextArea({ label, ai = false, ...props }) {
       </div>
       <textarea
         {...props}
-        className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+        ref={textareaRef}
+        onChange={(e) => {
+          onChange && onChange(e);
+          autoResize();
+        }}
+        className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm resize-none overflow-hidden"
       />
     </div>
   );
