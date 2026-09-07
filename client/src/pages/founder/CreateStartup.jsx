@@ -258,6 +258,11 @@ export default function CreateStartup() {
     ];
   }, [form, affidavitFile]);
 
+  const completedChecklistItems = checklist.filter((item) => item.ok).length;
+  const checklistProgress = Math.round(
+    (completedChecklistItems / checklist.length) * 100,
+  );
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((prev) => ({
@@ -429,6 +434,7 @@ export default function CreateStartup() {
           : "Startup designation application"
       }
       subtitle="MinT designation under Proclamation 1396/2025"
+      contentClassName="max-w-[90rem]"
       actions={
         <Link
           to="/founder"
@@ -441,14 +447,15 @@ export default function CreateStartup() {
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           {/* ── Company Identity ── */}
-          <Section title="Company identity" icon={<ImageIcon size={16} />}>
+          <Section title="Startup identity" icon={<ImageIcon size={16} />}>
             <div className="grid sm:grid-cols-2 gap-4">
               <Field
-                label="Company name *"
+                label="Startup or project name *"
                 name="companyName"
                 value={form.companyName}
                 onChange={handleChange}
                 required
+                hint="Use your venture's working name, even if it is still an idea and not yet registered."
               />
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -475,13 +482,13 @@ export default function CreateStartup() {
             </div>
 
             <TextArea
-              label="Company description *"
+              label="Startup or project description *"
               name="description"
               value={form.description}
               onChange={handleChange}
               required
               rows={2}
-              placeholder="Brief description of your company (max 500 characters)"
+              placeholder="Briefly describe your startup or project (max 500 characters)"
               ai
             />
 
@@ -820,9 +827,33 @@ export default function CreateStartup() {
 
         {/* ── Sidebar Checklist ── */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm h-fit sticky top-24">
-          <h3 className="font-semibold text-slate-900 mb-3">
-            Live eligibility checklist
-          </h3>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <h3 className="font-semibold text-slate-900">
+              Live eligibility checklist
+            </h3>
+            <span className="text-sm font-semibold text-teal-700 whitespace-nowrap">
+              {completedChecklistItems} of {checklist.length}
+            </span>
+          </div>
+          <div className="mb-5">
+            <div
+              className="h-2.5 rounded-full bg-slate-100 overflow-hidden"
+              role="progressbar"
+              aria-label="Eligibility checklist progress"
+              aria-valuemin={0}
+              aria-valuemax={checklist.length}
+              aria-valuenow={completedChecklistItems}
+            >
+              <div
+                className="h-full rounded-full bg-teal-600 transition-all duration-300"
+                style={{ width: `${checklistProgress}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1.5 text-xs text-slate-500">
+              <span>Progress</span>
+              <span>{checklistProgress}% complete</span>
+            </div>
+          </div>
           <ul className="space-y-2">
             {checklist.map((c) => (
               <li key={c.label} className="flex items-start gap-2 text-sm">
@@ -861,7 +892,7 @@ function Section({ title, icon, children }) {
   );
 }
 
-function Field({ label, className = "", ...props }) {
+function Field({ label, hint, className = "", ...props }) {
   return (
     <div className={className}>
       <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -871,6 +902,7 @@ function Field({ label, className = "", ...props }) {
         {...props}
         className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
       />
+      {hint && <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">{hint}</p>}
     </div>
   );
 }

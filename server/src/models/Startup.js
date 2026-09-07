@@ -154,7 +154,7 @@ const startupSchema = new mongoose.Schema(
 
     companyName: {
       type: String,
-      required: [true, "Company name is required"],
+      required: [true, "Startup or project name is required"],
       trim: true,
     },
     logo: {

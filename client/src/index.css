@@ -48,15 +48,19 @@ button {
   textarea {
     line-height: 1.45;
   }
+
+  textarea {
+    line-height: 1.7;
+  }
 }
 
 /* Keep content text readable without enlarging navigation and header controls. */
 main .text-sm {
-  font-size: 0.9375rem;
+  font-size: 0.9rem;
 }
 
 main .text-xs {
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
 }
 
 @keyframes fadeIn {

@@ -93,7 +93,13 @@ const NAV = {
   ],
 };
 
-export default function AppShell({ title, subtitle, children, actions }) {
+export default function AppShell({
+  title,
+  subtitle,
+  children,
+  actions,
+  contentClassName = "",
+}) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -293,7 +299,7 @@ export default function AppShell({ title, subtitle, children, actions }) {
                 <Menu className="w-5 h-5" />
               </button>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-bold text-slate-900 truncate tracking-tight">
+                <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate tracking-tight">
                   {title}
                 </h1>
                 {subtitle && (
@@ -319,7 +325,9 @@ export default function AppShell({ title, subtitle, children, actions }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-7xl w-full mx-auto">
+        <main
+          className={`flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-7xl w-full mx-auto ${contentClassName}`}
+        >
           {children}
         </main>
       </div>
