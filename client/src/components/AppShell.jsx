@@ -227,8 +227,10 @@ export default function AppShell({
             className={linkClass}
             onClick={() => setOpen(false)}
           >
-            <User className="w-5 h-5 shrink-0" strokeWidth={2} />
-            <span>Profile</span>
+            <span className="flex min-w-0 items-center gap-3">
+              <User className="w-5 h-5 shrink-0" strokeWidth={2} />
+              <span>Profile</span>
+            </span>
           </NavLink>
         </div>
       </nav>
