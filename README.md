@@ -237,7 +237,7 @@ Gemini is used for founder text polishing and investor-startup ranking. AI reque
 
 - Root directory: `client`
 - Build command: `npm run build`
-- Environment variable: `VITE_API_URL=https://digital-innovation-hub-for-mint.onrender.com/api`
+- Environment variable: `VITE_API_URL=https://mint-3c4v.onrender.com/api`
 - SPA rewrites are configured in `client/vercel.json`.
 
 ### Backend: Render
