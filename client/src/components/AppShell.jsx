@@ -1,5 +1,6 @@
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { apiRequest } from "../utils/api";
 import {
   LayoutDashboard,
   Building2,
@@ -19,7 +20,7 @@ import {
   ExternalLink,
   Shield,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const NAV = {
   admin: [
@@ -96,9 +97,43 @@ export default function AppShell({ title, subtitle, children, actions }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [reviewerCounts, setReviewerCounts] = useState({
+    builders: 0,
+    verifications: 0,
+  });
 
   const currentRole = user?.role || "founder";
   const items = NAV[currentRole] || NAV.founder;
+
+  useEffect(() => {
+    if (currentRole !== "reviewer") return undefined;
+
+    let active = true;
+    const loadReviewerCounts = async () => {
+      try {
+        const [builderRes, verificationRes] = await Promise.all([
+          apiRequest("/ecosystem-builders/admin?status=pending"),
+          apiRequest("/auth/admin/verifications"),
+        ]);
+        if (active) {
+          setReviewerCounts({
+            builders: builderRes.count ?? builderRes.data?.length ?? 0,
+            verifications:
+              verificationRes.count ?? verificationRes.data?.length ?? 0,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load reviewer notification counts", error);
+      }
+    };
+
+    loadReviewerCounts();
+    const interval = setInterval(loadReviewerCounts, 30_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [currentRole]);
 
   const handleLogout = () => {
     logout();
@@ -106,7 +141,7 @@ export default function AppShell({ title, subtitle, children, actions }) {
   };
 
   const linkClass = ({ isActive }) =>
-    `group flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-colors ${
+    `group flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-colors ${
       isActive
         ? "bg-teal-700 text-white shadow-sm"
         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -154,8 +189,29 @@ export default function AppShell({ title, subtitle, children, actions }) {
             className={linkClass}
             onClick={() => setOpen(false)}
           >
-            <item.icon className="w-5 h-5 shrink-0" strokeWidth={2} />
-            <span className="truncate">{item.label}</span>
+            <span className="flex min-w-0 items-center gap-3">
+              <item.icon className="w-5 h-5 shrink-0" strokeWidth={2} />
+              <span className="truncate">{item.label}</span>
+            </span>
+            {currentRole === "reviewer" && (
+              <span
+                className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
+                  item.to === "/reviewer/builders"
+                    ? reviewerCounts.builders > 0
+                      ? "bg-amber-500 text-white"
+                      : "bg-slate-100 text-slate-400"
+                    : item.to === "/reviewer/verifications"
+                      ? reviewerCounts.verifications > 0
+                        ? "bg-rose-500 text-white"
+                        : "bg-slate-100 text-slate-400"
+                      : "hidden"
+                }`}
+              >
+                {item.to === "/reviewer/builders"
+                  ? reviewerCounts.builders
+                  : reviewerCounts.verifications}
+              </span>
+            )}
           </NavLink>
         ))}
 
