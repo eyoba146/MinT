@@ -278,9 +278,10 @@ export default function Register() {
   const isDetailsStep = step === "details";
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-slate-50">
+    <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_10%_15%,rgba(20,184,166,0.12),transparent_30%),radial-gradient(circle_at_90%_85%,rgba(245,158,11,0.10),transparent_28%),linear-gradient(135deg,#f8fafc_0%,#ffffff_52%,#f0fdfa_100%)] px-5 py-10 sm:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(#0f766e_1px,transparent_1px),linear-gradient(90deg,#0f766e_1px,transparent_1px)] [background-size:32px_32px]" />
       {/* Left Brand Panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 text-white p-12 flex-col justify-between relative overflow-hidden">
+      <div className="hidden">
         <div className="absolute top-0 right-0 w-72 h-72 bg-teal-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10">
           <div className="flex items-center gap-2.5 mb-12">
@@ -308,8 +309,19 @@ export default function Register() {
       </div>
 
       {/* Right Form Panel */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-gradient-to-b from-slate-50 to-teal-50/30">
-        <div className="w-full max-w-md">
+      <div className="relative z-10 w-full max-w-xl">
+        <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-7 shadow-2xl shadow-slate-900/10 backdrop-blur sm:p-8">
+          <div className="mb-7 text-center">
+            <div className="mb-3 inline-flex items-center rounded-full border border-teal-100 bg-teal-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-teal-700">
+              Create your account
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              Join the MinT Digital Hub
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">
+              Set up your secure workspace in a few simple steps.
+            </p>
+          </div>
           {/* Step indicator */}
           {/* Step indicator */}
           <div className="flex items-center gap-2 mb-6">
