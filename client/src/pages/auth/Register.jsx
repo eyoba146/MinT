@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { SECTORS } from "../../data/constants";
@@ -59,8 +59,18 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { register, verifyEmail } = useAuth();
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const { register, verifyEmail, resendVerification } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -119,11 +129,33 @@ export default function Register() {
         extraData,
       );
       setStep("verify");
+      setVerificationCode("");
+      setResendCooldown(60);
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendVerification = async () => {
+    if (resendCooldown > 0 || resendLoading) return;
+    setError("");
+    setResendLoading(true);
+    try {
+      await resendVerification(form.email.trim());
+      setResendCooldown(60);
+    } catch (err) {
+      setError(err.message || "Failed to resend verification code.");
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleChangeEmail = () => {
+    setError("");
+    setVerificationCode("");
+    setStep("basic");
   };
 
   const handleVerifySubmit = async (e) => {
@@ -209,15 +241,32 @@ export default function Register() {
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() =>
-                setStep(form.role === "investor" ? "details" : "basic")
-              }
-              className="w-full text-sm text-teal-700 font-semibold hover:underline"
-            >
-              Back
-            </button>
+            <div className="space-y-3 text-center">
+              <p className="text-xs text-slate-500">
+                Not your email or did not receive the code?
+              </p>
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendLoading || resendCooldown > 0}
+                  className="text-sm font-semibold text-teal-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  {resendLoading
+                    ? "Sending..."
+                    : resendCooldown > 0
+                      ? `Resend code in ${resendCooldown}s`
+                      : "Resend verification code"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChangeEmail}
+                  className="text-sm font-semibold text-slate-600 hover:text-slate-900 hover:underline"
+                >
+                  Change email address
+                </button>
+              </div>
+            </div>
           </form>
         </div>
       </div>

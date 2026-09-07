@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const PendingRegistration = require("../models/PendingRegistration");
 const jwt = require("jsonwebtoken");
 const sendEmail = require("../utils/sendEmail");
 const streamifier = require("streamifier");
@@ -138,12 +139,19 @@ exports.register = async (req, res) => {
     ];
     const userRole = allowedRoles.includes(role) ? role : "founder";
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser?.emailVerified) {
       return res.status(400).json({
         success: false,
         message: "Email already registered",
       });
+    }
+
+    // Legacy unverified users were created before pending registrations were
+    // introduced. Remove only those incomplete records so the user can restart.
+    if (existingUser && !existingUser.emailVerified) {
+      await User.deleteOne({ _id: existingUser._id });
     }
 
     const code = generateCode();
@@ -151,7 +159,7 @@ exports.register = async (req, res) => {
 
     const userData = {
       fullName,
-      email,
+      email: normalizedEmail,
       password,
       role: userRole,
       emailVerified: false,
@@ -170,14 +178,22 @@ exports.register = async (req, res) => {
       }
     }
 
-    const user = await User.create(userData);
+    const pendingData = {
+      ...userData,
+      email: normalizedEmail,
+    };
 
-    await sendVerificationEmail(email, code);
+    // Re-registering the same unverified address replaces the old pending
+    // registration and sends a fresh code with the corrected form details.
+    await PendingRegistration.findOneAndDelete({ email: normalizedEmail });
+    const pending = await PendingRegistration.create(pendingData);
+
+    await sendVerificationEmail(normalizedEmail, code);
 
     res.status(201).json({
       success: true,
       message: "Verification code sent to your email",
-      userId: user._id,
+      pendingRegistrationId: pending._id,
     });
   } catch (error) {
     console.error("Register error:", error);
@@ -191,7 +207,47 @@ exports.verifyEmail = async (req, res) => {
   try {
     const { email, code } = req.body;
 
-    const user = await User.findOne({ email }).select(
+    const normalizedEmail = email?.trim().toLowerCase();
+    const pending = await PendingRegistration.findOne({ email: normalizedEmail }).select(
+      "+password +emailVerificationCode +emailVerificationExpires",
+    );
+
+    if (pending) {
+      if (
+        pending.emailVerificationCode !== code ||
+        new Date() > new Date(pending.emailVerificationExpires)
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid or expired code" });
+      }
+
+      const user = new User({
+        fullName: pending.fullName,
+        email: pending.email,
+        password: pending.password,
+        role: pending.role,
+        organization: pending.organization,
+        investmentRange: pending.investmentRange,
+        focus: pending.focus,
+        emailVerified: true,
+      });
+      user.$locals.passwordAlreadyHashed = true;
+      await user.save();
+
+      await PendingRegistration.deleteOne({ _id: pending._id });
+      const token = signToken(user._id);
+
+      return res.status(200).json({
+        success: true,
+        message: "Email verified successfully",
+        token,
+        user: formatUser(user),
+      });
+    }
+
+    // Backward compatibility for verification codes issued by the old flow.
+    const user = await User.findOne({ email: normalizedEmail }).select(
       "+emailVerificationCode +emailVerificationExpires",
     );
 
@@ -244,7 +300,38 @@ exports.resendVerification = async (req, res) => {
         .json({ success: false, message: "Email is required" });
     }
 
-    const user = await User.findOne({ email }).select(
+    const normalizedEmail = email.trim().toLowerCase();
+    const pending = await PendingRegistration.findOne({ email: normalizedEmail }).select(
+      "+emailVerificationCode +emailVerificationExpires +lastVerificationSentAt",
+    );
+
+    if (pending) {
+      const now = new Date();
+      const lastSent = pending.lastVerificationSentAt
+        ? new Date(pending.lastVerificationSentAt)
+        : null;
+      if (lastSent && now - lastSent < 60 * 1000) {
+        const waitSeconds = Math.ceil((60 * 1000 - (now - lastSent)) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${waitSeconds} seconds before requesting another code`,
+        });
+      }
+
+      const code = generateCode();
+      pending.emailVerificationCode = code;
+      pending.emailVerificationExpires = new Date(Date.now() + 15 * 60 * 1000);
+      pending.lastVerificationSentAt = now;
+      await pending.save();
+      await sendVerificationEmail(normalizedEmail, code);
+
+      return res.status(200).json({
+        success: true,
+        message: "A new verification code has been sent to your email",
+      });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
       "+emailVerificationCode +emailVerificationExpires +lastVerificationSentAt",
     );
     if (!user) {
