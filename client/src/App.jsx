@@ -174,7 +174,7 @@ function AppRoutes() {
       <Route
         path="/verification"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute roles={["founder", "investor", "ecosystem_builder"]}>
             <VerificationPage />
           </ProtectedRoute>
         }

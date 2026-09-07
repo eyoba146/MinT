@@ -89,57 +89,65 @@ export default function VerificationPage() {
 
   return (
     <AppShell title="Account Verification" subtitle={`${roleLabel} onboarding`}>
-      <div className="max-w-3xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto space-y-6">
         {/* Status Banner */}
         {status === "approved" ? (
-          <div className="bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 rounded-3xl p-8 text-center shadow-sm">
-            <CheckCircle className="w-14 h-14 text-teal-600 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-slate-900">
+          <div className="bg-white border border-teal-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+            <CheckCircle className="w-10 h-10 shrink-0 text-teal-600" />
+            <div>
+            <h2 className="text-lg font-bold text-slate-900">
               Verification Approved
             </h2>
-            <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
               Your account is fully verified. You can now access all features
               and apply for startup designation.
             </p>
             <button
               onClick={() => navigate(dashboardPath, { replace: true })}
-              className="mt-6 px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl transition-colors"
+              className="mt-4 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl transition-colors"
             >
               Go to dashboard
             </button>
+            </div>
           </div>
         ) : status === "pending" ? (
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-8 text-center shadow-sm">
-            <Clock className="w-14 h-14 text-amber-600 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-slate-900">
+          <div className="bg-white border border-amber-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+            <Clock className="w-10 h-10 shrink-0 text-amber-600" />
+            <div>
+            <h2 className="text-lg font-bold text-slate-900">
               Verification Under Review
             </h2>
-            <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
               Your documents have been submitted and are awaiting review. You
               will receive an email notification when a decision is made.
             </p>
+            </div>
           </div>
         ) : status === "rejected" ? (
-          <div className="bg-gradient-to-br from-rose-50 to-red-50 border border-rose-200 rounded-3xl p-8 text-center shadow-sm">
-            <XCircle className="w-14 h-14 text-rose-600 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-slate-900">
+          <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+            <XCircle className="w-10 h-10 shrink-0 text-rose-600" />
+            <div>
+            <h2 className="text-lg font-bold text-slate-900">
               Verification Rejected
             </h2>
-            <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
               {notes ||
                 "Your documents did not meet requirements. Please submit new documents below."}
             </p>
+            </div>
           </div>
         ) : (
-          <div className="bg-gradient-to-br from-slate-50 to-teal-50 border border-slate-200 rounded-3xl p-8 text-center shadow-sm">
-            <ShieldCheck className="w-14 h-14 text-teal-600 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-slate-900">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+            <ShieldCheck className="w-10 h-10 shrink-0 text-teal-600" />
+            <div>
+            <h2 className="text-lg font-bold text-slate-900">
               Submit Verification Documents
             </h2>
-            <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">
               As a {roleLabel.toLowerCase()}, you must verify your identity
               before accessing the platform.
             </p>
+            </div>
           </div>
         )}
 
@@ -147,8 +155,14 @@ export default function VerificationPage() {
         {status !== "approved" && status !== "pending" && (
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5"
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5"
           >
+            <div className="flex items-center gap-2 pb-1">
+              <Upload size={18} className="text-teal-700" />
+              <h2 className="text-base font-bold text-slate-900">
+                Upload documents
+              </h2>
+            </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -198,8 +212,8 @@ export default function VerificationPage() {
 
         {/* Submitted Documents */}
         {documents.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-7">
+            <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
               <FileText size={16} className="text-slate-400" /> Submitted
               documents
             </h3>
