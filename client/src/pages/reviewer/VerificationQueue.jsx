@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useToast } from "../../context/ToastContext";
 import AppShell from "../../components/AppShell";
+import { apiRequest } from "../../utils/api";
 import { Loader2, CheckCircle, XCircle, FileText, Search } from "lucide-react";
 
 export default function VerificationQueue() {
@@ -13,15 +14,7 @@ export default function VerificationQueue() {
 
   const loadPending = async () => {
     try {
-      const res = await fetch(
-        "http://localhost:5000/api/auth/admin/verifications",
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("dih_token")}`,
-          },
-        },
-      );
-      const data = await res.json();
+      const data = await apiRequest("/auth/admin/verifications");
       if (data.success) setPending(data.data || []);
     } catch (err) {
       toast(err.message || "Failed to load pending verifications", "error");
@@ -38,21 +31,13 @@ export default function VerificationQueue() {
   const handleReview = async (userId, reviewStatus) => {
     setAction({ userId, type: reviewStatus });
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/auth/admin/verifications/${userId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("dih_token")}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            status: reviewStatus,
-            notes: notes[userId] || "",
-          }),
+      const data = await apiRequest(`/auth/admin/verifications/${userId}`, {
+        method: "PATCH",
+        body: {
+          status: reviewStatus,
+          notes: notes[userId] || "",
         },
-      );
-      const data = await res.json();
+      });
       if (data.success) {
         toast(`Verification ${reviewStatus}`, "success");
         await loadPending();
